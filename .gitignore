@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.turbo/
+target/
+*.so
+.DS_Store
+.env
+.lockstep/

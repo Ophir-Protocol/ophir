@@ -1,0 +1,6 @@
+{
+  "name": "@ophir/docs",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Documentation for the Ophir Agent Negotiation Protocol"
+}

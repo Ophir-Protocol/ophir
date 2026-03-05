@@ -1,0 +1,2121 @@
+version: "1"
+
+config:
+  agent: "claude-code"
+  max_retries: 7
+  step_timeout: 900
+  working_directory: "."
+  judge_mode: "subscription"
+
+context: |
+  We are building Ophir — the Agent Negotiation Protocol. An open standard for
+  AI agent-to-agent commercial negotiation. The first protocol that lets one AI
+  agent say "I need X capability at Y price with Z reliability" and another
+  agent respond with a bid, negotiate terms, and commit cryptographically.
+
+  PROJECT NAME: "Ophir" — use @ophir/ as npm scope. NOT @anp/.
+  LOCATION: /home/cryptalis/Ophir/
+
+  PROTOCOL OVERVIEW:
+  - JSON-RPC 2.0 over HTTPS (consistent with A2A and MCP)
+  - 6 RPC methods: negotiate/rfq, negotiate/quote, negotiate/counter,
+    negotiate/accept, negotiate/reject, negotiate/dispute
+  - Ed25519 signing with JCS (RFC 8785) canonicalization
+  - did:key agent identity (W3C DID standard, compatible with Solana keypairs)
+  - Solana escrow (Anchor program) for USDC payments
+  - Integrates with A2A Agent Cards, MCP, x402, Lockstep verification
+
+  MONOREPO (Turborepo + npm workspaces):
+    packages/
+      protocol/          @ophir/protocol — Message types, JSON Schemas, SLA schema
+      sdk/               @ophir/sdk — BuyerAgent, SellerAgent, signing, transport, escrow
+      escrow/            Anchor program for Solana escrow (Rust)
+      reference-agents/  @ophir/reference-agents — 5 mock seller agents
+      demo/              @ophir/demo — Killer demo script
+      mcp-server/        @ophir/mcp-server — MCP tool wrapper
+      docs/              Documentation site
+
+  NEGOTIATION STATE MACHINE:
+    IDLE → RFQ_SENT → QUOTES_RECEIVED → COUNTERING → ACCEPTED → ESCROWED → ACTIVE → COMPLETED
+                                                      ↘ REJECTED
+                                        ACTIVE → DISPUTED → RESOLVED
+
+  SLA METRICS: uptime_pct, p50_latency_ms, p99_latency_ms, accuracy_pct,
+    throughput_rpm, error_rate_pct, time_to_first_byte_ms, custom
+
+  DEFAULTS:
+    Solana RPC: https://api.devnet.solana.com
+    RFQ timeout: 5min, Quote timeout: 2min, Counter timeout: 2min
+    Max negotiation rounds: 5, Currency: USDC
+    Escrow PDA seeds: ["escrow", buyer_pubkey, agreement_hash]
+
+  CRITICAL REQUIREMENTS:
+  - Never use CommonJS — all packages use ESM ("type": "module")
+  - Use vitest for testing
+  - Use Zod for runtime validation
+  - Use tweetnacl for Ed25519 operations
+  - Use json-stable-stringify for JCS canonicalization
+  - Target developer experience: 15 lines buyer, 15 lines seller
+  - All TypeScript strict mode
+  - EVERY public function must have JSDoc comments
+  - EVERY module must have comprehensive tests — no stubs, no "TODO" tests
+  - Crypto operations MUST be correct — verify signatures before trusting data
+  - All error paths MUST be tested (invalid signatures, expired messages, bad state transitions)
+
+  QUALITY BAR:
+  This codebase must be production-grade. Every function tested. Every crypto
+  operation verified. Every error path handled. The AI judge threshold is 9/10.
+  Write code as if it will be audited by security researchers.
+
+steps:
+  # ==========================================================================
+  # STEP 1: Monorepo Scaffolding
+  # ==========================================================================
+  - name: "Monorepo Scaffolding"
+    prompt: |
+      Initialize the Ophir monorepo with Turborepo and npm workspaces.
+
+      The project already has files from a previous build. Review what exists,
+      fix any issues, and ensure the scaffolding is clean and correct.
+
+      1. ROOT package.json:
+         - name: "ophir"
+         - private: true
+         - workspaces: ["packages/*"]
+         - scripts:
+             build: "turbo run build"
+             test: "turbo run test"
+             lint: "turbo run lint"
+             clean: "turbo run clean"
+         - devDependencies:
+             turbo: "^2.0.0"
+             typescript: "^5.5.0"
+
+      2. turbo.json:
+         {
+           "$schema": "https://turbo.build/schema.json",
+           "tasks": {
+             "build": { "dependsOn": ["^build"], "outputs": ["dist/**"] },
+             "test": { "dependsOn": ["build"] },
+             "lint": {},
+             "clean": { "cache": false }
+           }
+         }
+
+      3. Root tsconfig.json (base config):
+         - target: "ES2022"
+         - module: "NodeNext"
+         - moduleResolution: "NodeNext"
+         - strict: true
+         - declaration: true
+         - esModuleInterop: true
+         - skipLibCheck: true
+         - forceConsistentCasingInFileNames: true
+         - resolveJsonModule: true
+
+      4. Create ALL package directories with their own package.json and tsconfig.json:
+
+         packages/protocol/
+           package.json: name "@ophir/protocol", version "0.1.0", type "module"
+           main: "dist/index.js", types: "dist/index.d.ts"
+           scripts: build (tsc), test (vitest run), lint (tsc --noEmit), clean (rm -rf dist)
+           dependencies: zod ^3.23.0
+           devDependencies: typescript ^5.5.0, vitest ^2.0.0
+
+         packages/sdk/
+           package.json: name "@ophir/sdk", version "0.1.0", type "module"
+           dependencies: @ophir/protocol (workspace:*), @solana/web3.js ^1.95.0,
+             tweetnacl ^1.0.3, json-stable-stringify ^1.1.0, zod ^3.23.0,
+             express ^4.18.0, uuid ^9.0.0
+           devDependencies: typescript ^5.5.0, vitest ^2.0.0, @types/express ^4.17.0,
+             @types/json-stable-stringify ^1.0.0, @types/uuid ^10.0.0, tsx ^4.0.0
+
+         packages/escrow/
+           (Anchor program — directory with Anchor.toml and Rust source)
+
+         packages/reference-agents/
+           package.json: name "@ophir/reference-agents", version "0.1.0", type "module"
+           bin: { "ophir-agents": "dist/cli.js" }
+           dependencies: @ophir/sdk (workspace:*), @ophir/protocol (workspace:*),
+             commander ^12.0.0, express ^4.18.0
+           devDependencies: typescript ^5.5.0, vitest ^2.0.0, @types/express ^4.17.0, tsx ^4.0.0
+
+         packages/demo/
+           package.json: name "@ophir/demo", version "0.1.0", type "module"
+           bin: { "ophir-demo": "dist/index.js" }
+           dependencies: @ophir/sdk (workspace:*), @ophir/protocol (workspace:*),
+             @ophir/reference-agents (workspace:*), chalk ^5.3.0
+           devDependencies: typescript ^5.5.0, tsx ^4.0.0
+
+         packages/mcp-server/
+           package.json: name "@ophir/mcp-server", version "0.1.0", type "module"
+           dependencies: @ophir/sdk (workspace:*), @ophir/protocol (workspace:*)
+           devDependencies: typescript ^5.5.0, vitest ^2.0.0
+
+         packages/docs/
+           Documentation directory
+
+      5. Each package's tsconfig.json should extend the root:
+         { "extends": "../../tsconfig.json", "compilerOptions": { "outDir": "dist", "rootDir": "src" }, "include": ["src"] }
+
+      6. Create src/index.ts in each package (empty export or placeholder).
+
+      7. Create .gitignore at root:
+         node_modules/ dist/ .turbo/ target/ *.so .DS_Store .env .lockstep/
+
+      8. Create LICENSE file (MIT, copyright 2026 Ophir Contributors).
+
+      9. Run npm install at the root to link workspaces.
+
+      10. Verify: npx tsc --noEmit should pass.
+    validate:
+      - type: file_exists
+        target: "package.json"
+        label: "Root package.json exists"
+      - type: file_exists
+        target: "turbo.json"
+        label: "Turborepo config exists"
+      - type: file_exists
+        target: "tsconfig.json"
+        label: "Root tsconfig exists"
+      - type: file_exists
+        target: ".gitignore"
+        label: "Gitignore exists"
+      - type: file_exists
+        target: "LICENSE"
+        label: "MIT license exists"
+      - type: file_exists
+        target: "packages/protocol/package.json"
+        label: "Protocol package exists"
+      - type: file_exists
+        target: "packages/sdk/package.json"
+        label: "SDK package exists"
+      - type: file_exists
+        target: "packages/reference-agents/package.json"
+        label: "Reference agents package exists"
+      - type: file_exists
+        target: "packages/demo/package.json"
+        label: "Demo package exists"
+      - type: file_exists
+        target: "packages/mcp-server/package.json"
+        label: "MCP server package exists"
+      - type: file_contains
+        path: "package.json"
+        pattern: "workspaces"
+        label: "Root uses workspaces"
+      - type: command_passes
+        command: "test -d node_modules"
+        label: "npm install completed"
+        timeout: 120
+
+  # ==========================================================================
+  # STEP 2: Protocol Package — Types & Schemas
+  # ==========================================================================
+  - name: "Protocol Package — Types and Schemas"
+    prompt: |
+      Build the @ophir/protocol package with all message types, schemas, and constants.
+      This package has ZERO runtime dependencies except Zod. It is the shared type
+      foundation for the entire protocol.
+
+      Review existing files and fix/improve them. Create anything missing.
+
+      Create these files in packages/protocol/src/:
+
+      1. types.ts — All TypeScript interfaces. EVERY interface must have JSDoc comments
+         explaining what it is and when it's used:
+
+         AgentIdentity { agent_id: string (did:key:...), endpoint: string, reputation_score?: number, completed_jobs?: number }
+
+         ServiceRequirement { category: string, description?: string, requirements?: Record<string, any> }
+
+         BudgetConstraint { max_price_per_unit: string, currency: string, unit: string, total_budget?: string }
+
+         PaymentMethod { network: string, token: string }
+
+         PricingOffer { price_per_unit: string, currency: string, unit: string, pricing_model: 'fixed' | 'dynamic' | 'auction', minimum_commitment?: string, volume_discounts?: VolumeDiscount[] }
+
+         VolumeDiscount { min_units: number, price_per_unit: string }
+
+         SLAMetric { name: 'uptime_pct' | 'p50_latency_ms' | 'p99_latency_ms' | 'accuracy_pct' | 'throughput_rpm' | 'error_rate_pct' | 'time_to_first_byte_ms' | 'custom', target: number, comparison: 'gte' | 'lte' | 'eq' | 'between', measurement_method?: 'rolling_average' | 'percentile' | 'absolute' | 'sampled', measurement_window?: string, penalty_per_violation?: { amount: string, currency: string, max_penalties_per_window?: number }, custom_name?: string }
+
+         SLARequirement { metrics: SLAMetric[], dispute_resolution?: { method: 'automatic_escrow' | 'lockstep_verification' | 'timeout_release' | 'manual_arbitration', timeout_hours?: number, arbitrator?: string } }
+
+         ExecutionInfo { estimated_start?: string, estimated_duration?: string, capacity?: string }
+
+         EscrowRequirement { type: 'solana_pda', deposit_amount: string, release_condition: string }
+
+         LockstepSpec { enabled: boolean, verification_endpoint?: string, spec_hash?: string }
+
+         RFQParams { rfq_id: string, buyer: AgentIdentity, service: ServiceRequirement, budget: BudgetConstraint, sla_requirements?: SLARequirement, negotiation_style: 'rfq' | 'auction' | 'fixed-price', max_rounds?: number, expires_at: string, accepted_payments?: PaymentMethod[] }
+
+         QuoteParams { quote_id: string, rfq_id: string, seller: AgentIdentity, pricing: PricingOffer, sla_offered?: SLARequirement, execution?: ExecutionInfo, escrow_requirement?: EscrowRequirement, expires_at: string, signature: string }
+
+         CounterParams { counter_id: string, rfq_id: string, in_response_to: string, round: number, from: { agent_id: string, role: 'buyer' | 'seller' }, modifications: Record<string, any>, justification?: string, expires_at: string, signature: string }
+
+         FinalTerms { price_per_unit: string, currency: string, unit: string, sla?: SLARequirement, escrow?: { network: string, deposit_amount: string, release_condition: string } }
+
+         AcceptParams { agreement_id: string, rfq_id: string, accepting_message_id: string, final_terms: FinalTerms, agreement_hash: string, buyer_signature: string, seller_signature: string, lockstep_spec?: LockstepSpec }
+
+         RejectParams { rfq_id: string, rejecting_message_id: string, reason: string, from: { agent_id: string } }
+
+         ViolationEvidence { sla_metric: string, agreed_value: number, observed_value: number, measurement_window: string, evidence_hash: string, evidence_url?: string }
+
+         DisputeParams { dispute_id: string, agreement_id: string, filed_by: { agent_id: string, role: 'buyer' | 'seller' }, violation: ViolationEvidence, requested_remedy: string, escrow_action: string, lockstep_report?: { verification_id: string, result: 'PASS' | 'FAIL', deviations: string[] }, signature: string }
+
+         NegotiationState = 'IDLE' | 'RFQ_SENT' | 'QUOTES_RECEIVED' | 'COUNTERING' | 'ACCEPTED' | 'ESCROWED' | 'ACTIVE' | 'COMPLETED' | 'REJECTED' | 'DISPUTED' | 'RESOLVED'
+
+         JSON-RPC envelope types:
+         JsonRpcRequest<T> { jsonrpc: '2.0', method: string, id: string, params: T }
+         JsonRpcResponse<T> { jsonrpc: '2.0', id: string, result?: T, error?: { code: number, message: string, data?: any } }
+
+      2. schemas.ts — Zod schemas for runtime validation of ALL params types.
+         Create a Zod schema for each *Params type. These must be thorough:
+         - Validate UUID format for IDs
+         - Validate ISO 8601 for dates
+         - Validate did:key format for agent_id
+         - Validate numeric strings for prices (must be parseable as numbers)
+         - Validate enum values exhaustively
+         Export them all.
+
+      3. sla-schema.ts — The JSON Schema (as a JS object) for the SLA specification.
+
+      4. errors.ts — Error codes enum and OphirError class:
+         enum OphirErrorCode with all codes (OPHIR_001 through OPHIR_402).
+         class OphirError extends Error with code, data, and proper stack traces.
+
+      5. constants.ts — DEFAULT_CONFIG with all defaults.
+
+      6. methods.ts — Protocol method constants.
+
+      7. index.ts — Barrel export everything.
+
+      8. __tests__/schemas.test.ts — COMPREHENSIVE schema tests:
+         - Test every Zod schema with valid data → passes
+         - Test every Zod schema with invalid data → fails with correct error
+         - Test RFQParams rejects invalid UUID
+         - Test RFQParams rejects expired dates
+         - Test QuoteParams requires valid signature format
+         - Test SLA metrics validate enum values
+         - Test edge cases: empty strings, negative numbers, missing required fields
+         At least 30 test cases.
+
+      Run: cd packages/protocol && npx vitest run --reporter=verbose
+    validate:
+      - type: file_exists
+        target: "packages/protocol/src/types.ts"
+        label: "Protocol types file exists"
+      - type: file_exists
+        target: "packages/protocol/src/schemas.ts"
+        label: "Zod schemas file exists"
+      - type: file_exists
+        target: "packages/protocol/src/errors.ts"
+        label: "Error codes file exists"
+      - type: file_exists
+        target: "packages/protocol/src/constants.ts"
+        label: "Constants file exists"
+      - type: file_exists
+        target: "packages/protocol/src/__tests__/schemas.test.ts"
+        label: "Schema tests exist"
+      - type: file_contains
+        path: "packages/protocol/src/types.ts"
+        pattern: "NegotiationState"
+        label: "State machine type defined"
+      - type: file_contains
+        path: "packages/protocol/src/types.ts"
+        pattern: "RFQParams"
+        label: "RFQ params type defined"
+      - type: file_contains
+        path: "packages/protocol/src/types.ts"
+        pattern: "DisputeParams"
+        label: "Dispute params type defined"
+      - type: file_contains
+        path: "packages/protocol/src/errors.ts"
+        pattern: "OphirErrorCode"
+        label: "Error codes enum defined"
+      - type: file_contains
+        path: "packages/protocol/src/types.ts"
+        pattern: "JSDoc"
+        is_regex: false
+        label: "Types have JSDoc comments"
+      - type: command_passes
+        command: "cd packages/protocol && npx tsc --noEmit"
+        label: "Protocol package compiles"
+        timeout: 60
+      - type: command_passes
+        command: "cd packages/protocol && npx vitest run --reporter=verbose 2>&1 | tail -5"
+        label: "Protocol schema tests pass"
+        timeout: 120
+
+  # ==========================================================================
+  # STEP 3: SDK — Signing, Identity, Canonicalization
+  # ==========================================================================
+  - name: "SDK — Signing, Identity, Canonicalization"
+    prompt: |
+      Build the cryptographic foundation in packages/sdk/src/. This is the MOST
+      CRITICAL module — get crypto wrong and nothing works. Every function must be
+      tested exhaustively including adversarial cases.
+
+      Review existing files, fix any issues, ensure correctness.
+
+      1. signing.ts — Ed25519 signing and verification:
+         - Uses tweetnacl (import nacl from 'tweetnacl')
+         - EVERY function must have JSDoc comments
+
+         canonicalize(obj: any): string
+           JCS (RFC 8785) canonicalization using json-stable-stringify.
+           MUST produce deterministic output regardless of key insertion order.
+           MUST handle nested objects, arrays, nulls, numbers, booleans.
+           MUST NOT include undefined values.
+
+         sign(canonicalBytes: Uint8Array, secretKey: Uint8Array): string
+           Ed25519 signature, returned as base64 string.
+           Validate secretKey is 64 bytes (nacl.sign.secretKeyLength).
+           Throw OphirError(INVALID_SIGNATURE) if key is wrong length.
+
+         verify(canonicalBytes: Uint8Array, signature: string, publicKey: Uint8Array): boolean
+           Decode base64 signature, verify with tweetnacl.
+           Return false (never throw) on invalid signature.
+           Validate publicKey is 32 bytes.
+
+         agreementHash(finalTerms: FinalTerms): string
+           SHA-256 of canonicalized final terms as hex string.
+           Use Node.js crypto.createHash('sha256').
+
+         signMessage(params: any, secretKey: Uint8Array): string
+           Canonicalize → encode to UTF-8 → sign → return base64.
+
+         verifyMessage(params: any, signature: string, publicKey: Uint8Array): boolean
+           Canonicalize → encode to UTF-8 → verify.
+
+      2. identity.ts — DID:key generation and resolution:
+         MUST follow the did:key specification exactly.
+
+         generateKeyPair(): { publicKey: Uint8Array, secretKey: Uint8Array }
+           Uses nacl.sign.keyPair(). Returns raw key bytes.
+
+         publicKeyToDid(publicKey: Uint8Array): string
+           Ed25519 multicodec prefix: 0xed, 0x01 (two bytes)
+           Prepend to public key → base58btc encode → prefix with 'z' → did:key:z...
+           Use bs58 for base58 encoding.
+
+         didToPublicKey(did: string): Uint8Array
+           Parse did:key:z... → remove 'z' prefix → base58btc decode →
+           strip first 2 bytes (multicodec prefix) → return 32-byte public key.
+           Throw OphirError if DID format is invalid.
+           Validate the multicodec prefix is 0xed01.
+
+         generateAgentIdentity(endpoint: string): { agentId: string, keypair: { publicKey, secretKey }, endpoint: string }
+
+      3. packages/sdk/src/types.ts — SDK-specific types with JSDoc:
+         EscrowConfig, ServiceOffering, PricingStrategy, RankingFunction,
+         SellerInfo, Agreement, DisputeResult, JobResult
+
+      4. __tests__/signing.test.ts — EXHAUSTIVE crypto tests (at least 25 tests):
+         - canonicalize: deterministic output regardless of key order
+         - canonicalize: handles nested objects
+         - canonicalize: handles arrays
+         - canonicalize: handles null values
+         - canonicalize: excludes undefined values
+         - canonicalize: identical output for equivalent objects
+         - sign/verify: roundtrip with valid keypair
+         - sign/verify: fails with wrong public key
+         - sign/verify: fails with tampered data (flip one byte)
+         - sign/verify: fails with truncated signature
+         - sign/verify: fails with empty signature
+         - sign: throws on invalid secret key length
+         - verify: returns false for garbage signature
+         - agreementHash: deterministic for same input
+         - agreementHash: different for different input
+         - agreementHash: output is valid hex string of length 64
+         - signMessage/verifyMessage: roundtrip
+         - signMessage/verifyMessage: fails with modified params
+         - DID generation roundtrip (publicKeyToDid → didToPublicKey)
+         - DID starts with "did:key:z6Mk"
+         - didToPublicKey rejects invalid DID format
+         - didToPublicKey rejects wrong multicodec prefix
+         - generateKeyPair returns 32-byte public key and 64-byte secret key
+         - Two generateKeyPair calls produce different keys
+         - Cross-verification: sign with one keypair, verify fails with another
+
+      Run: cd packages/sdk && npx vitest run --reporter=verbose
+    validate:
+      - type: file_exists
+        target: "packages/sdk/src/signing.ts"
+        label: "Signing module exists"
+      - type: file_exists
+        target: "packages/sdk/src/identity.ts"
+        label: "Identity module exists"
+      - type: file_exists
+        target: "packages/sdk/src/__tests__/signing.test.ts"
+        label: "Signing tests exist"
+      - type: file_contains
+        path: "packages/sdk/src/signing.ts"
+        pattern: "canonicalize"
+        label: "Canonicalize function exists"
+      - type: file_contains
+        path: "packages/sdk/src/identity.ts"
+        pattern: "did:key"
+        label: "DID:key support exists"
+      - type: file_contains
+        path: "packages/sdk/src/signing.ts"
+        pattern: "createHash"
+        label: "SHA-256 hashing used"
+      - type: file_contains
+        path: "packages/sdk/src/identity.ts"
+        pattern: "0xed"
+        is_regex: false
+        label: "Ed25519 multicodec prefix used"
+      - type: command_passes
+        command: "cd packages/sdk && npx vitest run src/__tests__/signing.test.ts --reporter=verbose 2>&1 | tail -30"
+        label: "Signing tests pass"
+        timeout: 120
+      - type: command_passes
+        command: "cd packages/sdk && npx vitest run src/__tests__/signing.test.ts 2>&1 | grep -oP '\\d+ passed' | head -1"
+        label: "At least 20 signing tests"
+        timeout: 120
+
+  # ==========================================================================
+  # STEP 4: SDK — Transport & Negotiation State Machine
+  # ==========================================================================
+  - name: "SDK — Transport and State Machine"
+    prompt: |
+      Build the transport layer and negotiation state machine in packages/sdk/src/.
+      Review existing files, fix issues, ensure correctness.
+
+      1. transport.ts — JSON-RPC 2.0 HTTP client with JSDoc:
+         class JsonRpcClient:
+           constructor(config?: { timeout?: number })
+           async send<T>(endpoint: string, method: string, params: any, id?: string): Promise<T>
+             POST with JSON-RPC 2.0 envelope. Uses native fetch().
+             Throws OphirError(SELLER_UNREACHABLE) on network errors.
+             Throws OphirError(INVALID_MESSAGE) on JSON-RPC error responses.
+             Sets Content-Type: application/json, User-Agent: ophir-sdk/0.1.0.
+           async sendNotification(endpoint: string, method: string, params: any): Promise<void>
+
+      2. negotiation.ts — NegotiationSession state machine with JSDoc:
+         EVERY state transition must be validated. Invalid transitions throw
+         OphirError(INVALID_STATE_TRANSITION).
+
+         class NegotiationSession:
+           readonly rfqId: string
+           state: NegotiationState
+           readonly rfq: RFQParams
+           quotes: QuoteParams[]
+           counters: CounterParams[]
+           agreement?: Agreement
+           currentRound: number
+           maxRounds: number
+           createdAt: Date
+           updatedAt: Date
+
+           constructor(rfq: RFQParams, maxRounds?: number)
+
+           addQuote(quote: QuoteParams): void
+             Valid from: RFQ_SENT, QUOTES_RECEIVED → QUOTES_RECEIVED
+           addCounter(counter: CounterParams): void
+             Valid from: QUOTES_RECEIVED, COUNTERING → COUNTERING
+             Check currentRound < maxRounds, throw MAX_ROUNDS_EXCEEDED if not
+           accept(agreement: Agreement): void
+             Valid from: QUOTES_RECEIVED, COUNTERING → ACCEPTED
+           reject(reason: string): void
+             Valid from: RFQ_SENT, QUOTES_RECEIVED, COUNTERING → REJECTED
+           escrowFunded(escrowAddress: string): void
+             Valid from: ACCEPTED → ESCROWED
+           activate(): void
+             Valid from: ESCROWED → ACTIVE
+           complete(): void
+             Valid from: ACTIVE → COMPLETED
+           dispute(): void
+             Valid from: ACTIVE → DISPUTED
+           resolve(): void
+             Valid from: DISPUTED → RESOLVED
+           isExpired(): boolean
+           toJSON(): object
+
+      3. server.ts — JSON-RPC server (Express-based) with JSDoc:
+         class NegotiationServer:
+           handle(method: string, handler): void
+           listen(port: number): Promise<void>
+           close(): Promise<void>
+           getPort(): number  // Return actual listening port (important for random ports)
+
+      4. __tests__/negotiation.test.ts — EXHAUSTIVE state machine tests (at least 25):
+         - Test initial state is RFQ_SENT
+         - Test addQuote from RFQ_SENT → QUOTES_RECEIVED
+         - Test addQuote from QUOTES_RECEIVED stays QUOTES_RECEIVED
+         - Test addCounter from QUOTES_RECEIVED → COUNTERING
+         - Test addCounter increments currentRound
+         - Test addCounter throws MAX_ROUNDS_EXCEEDED when maxRounds hit
+         - Test accept from QUOTES_RECEIVED → ACCEPTED
+         - Test accept from COUNTERING → ACCEPTED
+         - Test reject from RFQ_SENT → REJECTED
+         - Test reject from QUOTES_RECEIVED → REJECTED
+         - Test reject from COUNTERING → REJECTED
+         - Test escrowFunded from ACCEPTED → ESCROWED
+         - Test activate from ESCROWED → ACTIVE
+         - Test complete from ACTIVE → COMPLETED
+         - Test dispute from ACTIVE → DISPUTED
+         - Test resolve from DISPUTED → RESOLVED
+         - INVALID: addQuote from ACCEPTED throws
+         - INVALID: accept from REJECTED throws
+         - INVALID: escrowFunded from RFQ_SENT throws
+         - INVALID: activate from ACCEPTED throws (must escrow first)
+         - INVALID: complete from ESCROWED throws (must activate first)
+         - INVALID: dispute from COMPLETED throws
+         - Test toJSON serialization and content
+         - Test multiple quotes accumulate
+         - Test session preserves RFQ data
+
+      Run: cd packages/sdk && npx vitest run --reporter=verbose
+    validate:
+      - type: file_exists
+        target: "packages/sdk/src/transport.ts"
+        label: "Transport module exists"
+      - type: file_exists
+        target: "packages/sdk/src/negotiation.ts"
+        label: "Negotiation state machine exists"
+      - type: file_exists
+        target: "packages/sdk/src/server.ts"
+        label: "Server module exists"
+      - type: file_exists
+        target: "packages/sdk/src/__tests__/negotiation.test.ts"
+        label: "Negotiation tests exist"
+      - type: file_contains
+        path: "packages/sdk/src/negotiation.ts"
+        pattern: "NegotiationSession"
+        label: "NegotiationSession class exists"
+      - type: file_contains
+        path: "packages/sdk/src/negotiation.ts"
+        pattern: "INVALID_STATE_TRANSITION"
+        label: "Invalid transition handling exists"
+      - type: file_contains
+        path: "packages/sdk/src/negotiation.ts"
+        pattern: "MAX_ROUNDS_EXCEEDED"
+        label: "Max rounds enforcement exists"
+      - type: command_passes
+        command: "cd packages/sdk && npx vitest run src/__tests__/negotiation.test.ts --reporter=verbose 2>&1 | tail -30"
+        label: "State machine tests pass"
+        timeout: 120
+
+  # ==========================================================================
+  # STEP 5: SDK — Message Builders & SLA Utilities
+  # ==========================================================================
+  - name: "SDK — Message Builders and SLA Utilities"
+    prompt: |
+      Build message construction helpers and SLA utilities in packages/sdk/src/.
+      Review existing files, fix issues, ensure correctness.
+
+      1. messages.ts — Builder functions for all 6 message types with JSDoc:
+         Each builder creates a JSON-RPC request, auto-generates UUIDs and timestamps.
+
+         buildRFQ(params: { buyer: AgentIdentity, service: ServiceRequirement, budget: BudgetConstraint, sla?: SLARequirement, maxRounds?: number, ttlMs?: number, acceptedPayments?: PaymentMethod[] }): JsonRpcRequest<RFQParams>
+
+         buildQuote(params: { rfqId: string, seller: AgentIdentity, pricing: PricingOffer, sla?: SLARequirement, execution?: ExecutionInfo, escrow?: EscrowRequirement, ttlMs?: number, secretKey: Uint8Array }): JsonRpcRequest<QuoteParams>
+           MUST sign the params with seller's key using signMessage.
+
+         buildCounter(params: { rfqId: string, inResponseTo: string, round: number, from: { agent_id: string, role: 'buyer' | 'seller' }, modifications: Record<string, any>, justification?: string, ttlMs?: number, secretKey: Uint8Array }): JsonRpcRequest<CounterParams>
+
+         buildAccept(params: { rfqId: string, acceptingMessageId: string, finalTerms: FinalTerms, buyerSecretKey: Uint8Array, sellerSignature?: string }): JsonRpcRequest<AcceptParams>
+           MUST compute agreement_hash from finalTerms using agreementHash().
+
+         buildReject(params: { rfqId: string, rejectingMessageId: string, reason: string, agentId: string }): JsonRpcRequest<RejectParams>
+
+         buildDispute(params: { agreementId: string, filedBy: { agent_id: string, role: 'buyer' | 'seller' }, violation: ViolationEvidence, requestedRemedy: string, escrowAction: string, lockstepReport?: any, secretKey: Uint8Array }): JsonRpcRequest<DisputeParams>
+
+      2. sla.ts — SLA utilities with JSDoc:
+
+         SLA_TEMPLATES: object with 5 pre-built templates (inference_realtime,
+         inference_batch, data_processing, code_generation, translation).
+         Each returns a full SLARequirement with metrics array.
+
+         compareSLAs(a: SLARequirement, b: SLARequirement): { winner: 'a' | 'b' | 'tie', details: ... }
+         meetsSLARequirements(offered: SLARequirement, required: SLARequirement): { meets: boolean, gaps: ... }
+         slaToLockstepSpec(sla: SLARequirement, agreement: Agreement): object
+
+      3. __tests__/messages.test.ts — At least 20 tests:
+         - buildRFQ produces valid JSON-RPC envelope with jsonrpc: "2.0"
+         - buildRFQ auto-generates UUID rfq_id
+         - buildRFQ sets expires_at in the future
+         - buildRFQ sets correct method "negotiate/rfq"
+         - buildQuote signs params (verify with seller public key)
+         - buildQuote signature changes if params change
+         - buildCounter increments round correctly
+         - buildCounter signs params
+         - buildAccept computes agreement_hash deterministically
+         - buildAccept agreement_hash changes with different terms
+         - buildAccept signs with buyer key
+         - buildReject has no signature (unsigned)
+         - buildDispute signs with filer's key
+         - All builders produce unique IDs on each call
+         - buildQuote with same params produces same signature (deterministic)
+
+      4. __tests__/sla.test.ts — At least 15 tests:
+         - Each template returns valid SLARequirement
+         - Each template has at least 3 metrics
+         - compareSLAs identifies winner correctly (better latency wins)
+         - compareSLAs returns tie for identical SLAs
+         - meetsSLARequirements returns true when all metrics met
+         - meetsSLARequirements returns false when any metric not met
+         - meetsSLARequirements correctly identifies which metrics have gaps
+         - meetsSLARequirements handles 'gte' comparison (higher is better)
+         - meetsSLARequirements handles 'lte' comparison (lower is better)
+         - slaToLockstepSpec produces valid spec structure
+         - Edge case: empty metrics array
+         - Edge case: custom metric name
+
+      Run: cd packages/sdk && npx vitest run --reporter=verbose
+    validate:
+      - type: file_exists
+        target: "packages/sdk/src/messages.ts"
+        label: "Message builders exist"
+      - type: file_exists
+        target: "packages/sdk/src/sla.ts"
+        label: "SLA utilities exist"
+      - type: file_exists
+        target: "packages/sdk/src/__tests__/messages.test.ts"
+        label: "Message tests exist"
+      - type: file_exists
+        target: "packages/sdk/src/__tests__/sla.test.ts"
+        label: "SLA tests exist"
+      - type: file_contains
+        path: "packages/sdk/src/messages.ts"
+        pattern: "buildRFQ"
+        label: "RFQ builder defined"
+      - type: file_contains
+        path: "packages/sdk/src/messages.ts"
+        pattern: "signMessage"
+        label: "Messages use signing"
+      - type: file_contains
+        path: "packages/sdk/src/sla.ts"
+        pattern: "SLA_TEMPLATES"
+        label: "SLA templates defined"
+      - type: command_passes
+        command: "cd packages/sdk && npx vitest run src/__tests__/messages.test.ts src/__tests__/sla.test.ts --reporter=verbose 2>&1 | tail -30"
+        label: "Message and SLA tests pass"
+        timeout: 120
+
+  # ==========================================================================
+  # STEP 6: SDK — SellerAgent Class
+  # ==========================================================================
+  - name: "SDK — SellerAgent Class"
+    prompt: |
+      Build the SellerAgent class in packages/sdk/src/seller.ts with full JSDoc.
+      Review existing file, fix issues, ensure correctness.
+
+      class SellerAgent:
+        - Auto-generates Ed25519 keypair and DID if not provided
+        - Creates NegotiationServer for incoming messages
+        - Manages NegotiationSessions
+        - Generates quotes with configurable pricing strategies
+        - Generates A2A Agent Cards with negotiation capability
+
+        Key methods:
+        constructor(config) — auto-generate keypair, init server, register handlers
+        registerService(service) — add service offering
+        generateAgentCard() — A2A-compatible card with negotiation block
+        onRFQ(handler) — register custom RFQ handler
+        generateQuote(rfq) — auto-generate signed quote matching service category
+        onCounter(handler) — register counter-offer handler
+        listen(port?) — start server (default 3000, support port 0 for random)
+        close() — stop server
+        getSession(rfqId) — get session by ID
+        getSessions() — get all sessions
+
+        Server handlers (registered internally):
+        - negotiate/rfq: validate, create session, call rfqHandler or generateQuote,
+          send quote back to buyer endpoint
+        - negotiate/counter: look up session, call counterHandler, respond
+        - negotiate/accept: look up session, transition to ACCEPTED
+        - negotiate/reject: look up session, transition to REJECTED
+
+        generateQuote must:
+        - Find matching service by category
+        - Apply pricing strategy (fixed/competitive/dynamic)
+        - Add volume discounts (10% at 1000+, 20% at 10000+)
+        - Create SLA from defaults
+        - SIGN the quote with seller's secret key
+        - Return fully valid QuoteParams
+
+      __tests__/seller.test.ts — At least 15 tests:
+        - Constructor auto-generates keypair and DID
+        - DID starts with "did:key:z"
+        - registerService adds to services list
+        - generateAgentCard returns valid structure with negotiation capability
+        - generateAgentCard lists all registered services
+        - generateQuote produces signed quote for matching service
+        - generateQuote signature is verifiable with seller's public key
+        - generateQuote applies 'competitive' pricing (lower than base)
+        - generateQuote returns null for non-matching category
+        - listen starts server, close stops it (use port 0)
+        - Server responds to negotiate/rfq with a quote
+        - Server handles negotiate/accept
+        - Server handles negotiate/reject
+        - Multiple services can be registered
+
+      Run: cd packages/sdk && npx vitest run --reporter=verbose
+    validate:
+      - type: file_exists
+        target: "packages/sdk/src/seller.ts"
+        label: "SellerAgent module exists"
+      - type: file_exists
+        target: "packages/sdk/src/__tests__/seller.test.ts"
+        label: "Seller tests exist"
+      - type: file_contains
+        path: "packages/sdk/src/seller.ts"
+        pattern: "class SellerAgent"
+        label: "SellerAgent class defined"
+      - type: file_contains
+        path: "packages/sdk/src/seller.ts"
+        pattern: "generateAgentCard"
+        label: "Agent card generation exists"
+      - type: file_contains
+        path: "packages/sdk/src/seller.ts"
+        pattern: "generateQuote"
+        label: "Quote generation exists"
+      - type: file_contains
+        path: "packages/sdk/src/seller.ts"
+        pattern: "signMessage"
+        label: "Quotes are signed"
+      - type: command_passes
+        command: "cd packages/sdk && npx vitest run src/__tests__/seller.test.ts --reporter=verbose 2>&1 | tail -30"
+        label: "Seller tests pass"
+        timeout: 120
+
+  # ==========================================================================
+  # STEP 7: SDK — BuyerAgent Class
+  # ==========================================================================
+  - name: "SDK — BuyerAgent Class"
+    prompt: |
+      Build the BuyerAgent class in packages/sdk/src/buyer.ts with full JSDoc.
+      Review existing file, fix issues, ensure correctness.
+
+      class BuyerAgent:
+        - Auto-generates Ed25519 keypair and DID if not provided
+        - Creates JsonRpcClient for outgoing messages
+        - Creates NegotiationServer for incoming quotes
+        - Manages NegotiationSessions
+
+        Key methods:
+        constructor(config) — auto-generate keypair, init transport + server
+        requestQuotes(params) — build RFQ, send to sellers, create session
+        waitForQuotes(session, options?) — wait for minQuotes or timeout
+        rankQuotes(quotes, strategy?) — sort by cheapest/fastest/best_sla/custom
+        acceptQuote(quote) — build Accept, sign, send to seller, return Agreement
+        counter(quote, modifications, justification?) — build Counter, send
+        reject(session, reason?) — build Reject, send to all sellers
+        dispute(agreement, violation) — build Dispute, send to seller
+        listen(port?) — start server for incoming quotes
+        close() — stop server
+
+        The buyer's server handles:
+        - negotiate/quote: incoming quotes → add to session
+        - negotiate/counter: incoming counter-offers from sellers
+        - negotiate/accept: seller acknowledgment
+
+        acceptQuote must:
+        - Extract final terms from the quote
+        - Compute agreement_hash using agreementHash()
+        - Sign with buyer's secret key
+        - Send accept to seller endpoint
+        - Return Agreement object with all fields populated
+
+        rankQuotes must handle:
+        - 'cheapest': parse price_per_unit as number, sort ascending
+        - 'fastest': sort by p99_latency if available, else estimated_start
+        - 'best_sla': score SLA metrics (more metrics met = higher score)
+        - Custom RankingFunction: (a, b) => number
+
+      __tests__/buyer.test.ts — At least 15 tests:
+        - Constructor auto-generates keypair and DID
+        - rankQuotes 'cheapest' sorts by price ascending
+        - rankQuotes 'cheapest' handles string prices correctly
+        - rankQuotes with custom function works
+        - rankQuotes returns empty array for empty input
+        - requestQuotes creates a session with correct state
+        - requestQuotes sets session state to RFQ_SENT
+        - acceptQuote computes valid agreement_hash
+        - acceptQuote signs with buyer's key (verifiable)
+        - counter creates counter with correct round number
+        - reject transitions session to REJECTED
+        - listen/close starts and stops server
+        - Multiple sessions can exist simultaneously
+
+      Run: cd packages/sdk && npx vitest run --reporter=verbose
+    validate:
+      - type: file_exists
+        target: "packages/sdk/src/buyer.ts"
+        label: "BuyerAgent module exists"
+      - type: file_exists
+        target: "packages/sdk/src/__tests__/buyer.test.ts"
+        label: "Buyer tests exist"
+      - type: file_contains
+        path: "packages/sdk/src/buyer.ts"
+        pattern: "class BuyerAgent"
+        label: "BuyerAgent class defined"
+      - type: file_contains
+        path: "packages/sdk/src/buyer.ts"
+        pattern: "requestQuotes"
+        label: "requestQuotes method exists"
+      - type: file_contains
+        path: "packages/sdk/src/buyer.ts"
+        pattern: "rankQuotes"
+        label: "rankQuotes method exists"
+      - type: file_contains
+        path: "packages/sdk/src/buyer.ts"
+        pattern: "acceptQuote"
+        label: "acceptQuote method exists"
+      - type: file_contains
+        path: "packages/sdk/src/buyer.ts"
+        pattern: "agreementHash"
+        label: "Agreement hash computed in acceptQuote"
+      - type: command_passes
+        command: "cd packages/sdk && npx vitest run src/__tests__/buyer.test.ts --reporter=verbose 2>&1 | tail -30"
+        label: "Buyer tests pass"
+        timeout: 120
+
+  # ==========================================================================
+  # STEP 8: SDK — Integration Tests (Buyer ↔ Seller)
+  # ==========================================================================
+  - name: "SDK — Buyer-Seller Integration Tests"
+    retries: 10
+    timeout: 900
+    prompt: |
+      Build end-to-end integration tests with REAL HTTP communication between
+      BuyerAgent and SellerAgent. This is the most critical test suite.
+
+      Review and fix existing integration tests. Make them bulletproof.
+
+      Create packages/sdk/src/__tests__/integration.test.ts:
+
+      Use random ports (port 0 → OS-assigned) for ALL servers. Use beforeAll/afterAll.
+      Add generous timeouts for async operations (5-10 seconds).
+
+      Test 1: "Happy path — RFQ → Quote → Accept"
+        - Create SellerAgent with inference service (base_price: "0.005")
+        - Create BuyerAgent
+        - Both listen on random ports
+        - Seller's onRFQ handler auto-generates quote
+        - Buyer sends RFQ to seller's endpoint
+        - Buyer waits for quotes (timeout 10s)
+        - Verify quote received with correct pricing
+        - Verify quote signature is valid (use verify() from signing.ts)
+        - Buyer ranks quotes ('cheapest')
+        - Buyer accepts best quote
+        - Verify agreement has valid agreement_hash (recompute and compare)
+        - Verify buyer_signature is valid
+        - Clean up servers
+
+      Test 2: "Counter-offer flow"
+        - After receiving quote at $0.005, buyer counters at $0.003
+        - Seller's onCounter accepts at $0.004
+        - Verify session round tracking (round 2)
+        - Verify final agreement reflects $0.004
+
+      Test 3: "Rejection flow"
+        - Seller sends quote above budget
+        - Buyer rejects with reason "price_too_high"
+        - Verify session state is REJECTED
+
+      Test 4: "Multiple sellers"
+        - 2 sellers with different prices ($0.005 and $0.008)
+        - Buyer sends RFQ to both, waits for 2 quotes
+        - rankQuotes('cheapest') returns $0.005 first
+        - Buyer accepts cheapest
+
+      Test 5: "Signature verification end-to-end"
+        - Receive quote, verify seller's signature with their public key
+        - Accept quote, verify buyer's signature
+        - Verify agreement_hash matches recomputed hash
+
+      Test 6: "Expired quote handling"
+        - Seller sends quote with very short TTL (100ms)
+        - Wait 200ms
+        - Verify the quote is expired (checking expires_at)
+
+      Test 7: "Max rounds exceeded"
+        - Set maxRounds to 2
+        - Do 2 rounds of counters
+        - Third counter should fail with MAX_ROUNDS_EXCEEDED
+
+      Update packages/sdk/src/index.ts to export ALL public classes and functions:
+        BuyerAgent, SellerAgent, NegotiationSession, JsonRpcClient, NegotiationServer,
+        EscrowManager, all signing functions, all identity functions, all message builders,
+        all SLA utilities, all types.
+
+      Run: cd packages/sdk && npx vitest run --reporter=verbose
+    validate:
+      - type: file_exists
+        target: "packages/sdk/src/__tests__/integration.test.ts"
+        label: "Integration test file exists"
+      - type: file_contains
+        path: "packages/sdk/src/__tests__/integration.test.ts"
+        pattern: "Happy path"
+        label: "Happy path test exists"
+      - type: file_contains
+        path: "packages/sdk/src/__tests__/integration.test.ts"
+        pattern: "Counter-offer"
+        label: "Counter-offer test exists"
+      - type: file_contains
+        path: "packages/sdk/src/__tests__/integration.test.ts"
+        pattern: "Signature"
+        label: "Signature verification test exists"
+      - type: file_contains
+        path: "packages/sdk/src/__tests__/integration.test.ts"
+        pattern: "Multiple"
+        label: "Multiple sellers test exists"
+      - type: command_passes
+        command: "cd packages/sdk && npx vitest run --reporter=verbose 2>&1 | tail -40"
+        label: "ALL SDK tests pass including integration"
+        timeout: 300
+
+  # ==========================================================================
+  # STEP 9: Solana Escrow — Anchor Program
+  # ==========================================================================
+  - name: "Solana Escrow — Anchor Program"
+    retries: 10
+    timeout: 900
+    prompt: |
+      Build the Solana escrow Anchor program in packages/escrow/.
+      Review existing code and fix all issues. This must be production-quality Rust.
+
+      The program has 4 instructions for managing USDC escrow tied to negotiated agreements.
+
+      programs/ophir-escrow/src/lib.rs:
+
+      use anchor_lang::prelude::*;
+      use anchor_spl::token::{self, Token, TokenAccount, Transfer, Mint};
+      use anchor_spl::associated_token::AssociatedToken;
+
+      EVERY function and struct must have doc comments (///).
+
+      1. EscrowAccount (PDA, seeds: ["escrow", buyer.key(), &agreement_hash]):
+         /// Stores escrow state for a negotiated agreement
+         pub struct EscrowAccount {
+           pub buyer: Pubkey,           // Buyer's wallet
+           pub seller: Pubkey,          // Seller's wallet
+           pub mint: Pubkey,            // Token mint (USDC)
+           pub agreement_hash: [u8; 32], // SHA-256 of canonical agreement terms
+           pub deposit_amount: u64,     // Deposited amount in smallest units
+           pub penalty_rate_bps: u16,   // Basis points for penalty (e.g. 500 = 5%)
+           pub created_at: i64,         // Unix timestamp
+           pub timeout_slot: u64,       // Slot number for auto-cancel
+           pub status: EscrowStatus,    // Current status
+           pub bump: u8,                // PDA bump
+         }
+         Space: 8 + 32 + 32 + 32 + 32 + 8 + 2 + 8 + 8 + 1 + 1 = 164
+
+         #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq)]
+         pub enum EscrowStatus { Active, Released, Disputed, Cancelled }
+
+      2. make_escrow(ctx, agreement_hash, deposit_amount, timeout_slots, penalty_rate_bps):
+         - Create EscrowAccount PDA
+         - Create vault token account (PDA seeds: ["vault", escrow.key()])
+         - Transfer deposit_amount from buyer's token account to vault
+         - Set timeout_slot = Clock::get()?.slot + timeout_slots
+         - Validate: deposit_amount > 0
+         - Validate: penalty_rate_bps <= 10000 (max 100%)
+         - Validate: timeout_slots > 0
+
+      3. release_escrow(ctx, verification_hash: Option<[u8; 32]>):
+         - Require escrow.status == Active
+         - Transfer entire vault balance to seller's token account
+         - Set status = Released
+         - Use PDA signer seeds for vault transfer
+
+      4. dispute_escrow(ctx, violation_evidence_hash, penalty_amount):
+         - Require escrow.status == Active
+         - Require: penalty_amount <= escrow.deposit_amount * penalty_rate_bps / 10000
+         - Transfer penalty_amount to buyer's token account
+         - Transfer remainder to seller's token account
+         - Set status = Disputed
+         - Emit DisputeEvent { agreement_hash, penalty_amount, violation_evidence_hash }
+
+      5. cancel_escrow(ctx):
+         - Require escrow.status == Active
+         - Require Clock::get()?.slot >= escrow.timeout_slot
+         - Transfer entire vault balance back to buyer
+         - Set status = Cancelled
+
+      Custom errors:
+      #[error_code]
+      pub enum EscrowError {
+         #[msg("Escrow is not active")]
+         EscrowNotActive,
+         #[msg("Timeout has not been reached")]
+         TimeoutNotReached,
+         #[msg("Penalty exceeds maximum allowed")]
+         PenaltyExceedsMax,
+         #[msg("Invalid deposit amount")]
+         InvalidDeposit,
+         #[msg("Invalid timeout")]
+         InvalidTimeout,
+         #[msg("Invalid penalty rate")]
+         InvalidPenaltyRate,
+      }
+
+      Events:
+      #[event]
+      pub struct EscrowCreated { pub buyer: Pubkey, pub seller: Pubkey, pub agreement_hash: [u8; 32], pub deposit_amount: u64 }
+      #[event]
+      pub struct EscrowReleased { pub agreement_hash: [u8; 32], pub amount: u64 }
+      #[event]
+      pub struct EscrowDisputed { pub agreement_hash: [u8; 32], pub penalty_amount: u64, pub evidence_hash: [u8; 32] }
+      #[event]
+      pub struct EscrowCancelled { pub agreement_hash: [u8; 32], pub refund_amount: u64 }
+
+      Account structs for each instruction:
+      - MakeEscrow: buyer (signer, mut), escrow (init, PDA), vault (init, token account PDA),
+        buyer_token_account (mut), mint, token_program, system_program, rent
+      - ReleaseEscrow: seller (signer), escrow (mut, has_one = seller), vault (mut),
+        seller_token_account (mut), token_program
+      - DisputeEscrow: buyer (signer), escrow (mut, has_one = buyer), vault (mut),
+        buyer_token_account (mut), seller_token_account (mut), token_program
+      - CancelEscrow: buyer (signer), escrow (mut, has_one = buyer), vault (mut),
+        buyer_token_account (mut), token_program
+
+      Ensure Cargo.toml has correct dependencies:
+        anchor-lang = "0.31.1"
+        anchor-spl = { version = "0.31.1", features = ["token"] }
+
+      Ensure Anchor.toml exists with program configuration.
+
+      Try: cd packages/escrow && anchor build
+      If anchor/rust toolchain isn't available, just ensure the source is correct.
+    validate:
+      - type: file_exists
+        target: "packages/escrow/programs/ophir-escrow/src/lib.rs"
+        label: "Escrow program source exists"
+      - type: file_contains
+        path: "packages/escrow/programs/ophir-escrow/src/lib.rs"
+        pattern: "make_escrow"
+        label: "make_escrow instruction exists"
+      - type: file_contains
+        path: "packages/escrow/programs/ophir-escrow/src/lib.rs"
+        pattern: "release_escrow"
+        label: "release_escrow instruction exists"
+      - type: file_contains
+        path: "packages/escrow/programs/ophir-escrow/src/lib.rs"
+        pattern: "dispute_escrow"
+        label: "dispute_escrow instruction exists"
+      - type: file_contains
+        path: "packages/escrow/programs/ophir-escrow/src/lib.rs"
+        pattern: "cancel_escrow"
+        label: "cancel_escrow instruction exists"
+      - type: file_contains
+        path: "packages/escrow/programs/ophir-escrow/src/lib.rs"
+        pattern: "EscrowAccount"
+        label: "EscrowAccount struct exists"
+      - type: file_contains
+        path: "packages/escrow/programs/ophir-escrow/src/lib.rs"
+        pattern: "EscrowError"
+        label: "Custom error codes exist"
+      - type: file_contains
+        path: "packages/escrow/programs/ophir-escrow/src/lib.rs"
+        pattern: "EscrowCreated"
+        label: "Events exist"
+      - type: file_contains
+        path: "packages/escrow/programs/ophir-escrow/src/lib.rs"
+        pattern: "///|#\\[doc"
+        is_regex: true
+        label: "Doc comments exist"
+      - type: file_exists
+        target: "packages/escrow/Anchor.toml"
+        label: "Anchor.toml exists"
+      - type: file_exists
+        target: "packages/escrow/programs/ophir-escrow/Cargo.toml"
+        label: "Cargo.toml exists"
+
+  # ==========================================================================
+  # STEP 10: SDK — Escrow Manager (TypeScript Wrapper)
+  # ==========================================================================
+  - name: "SDK — Escrow Manager"
+    prompt: |
+      Build the EscrowManager TypeScript wrapper in packages/sdk/src/escrow.ts.
+      Review existing file, fix issues, ensure correctness.
+
+      This wraps Solana escrow program interactions with JSDoc on every method.
+
+      class EscrowManager:
+        constructor(config?: { rpcUrl?: string, programId?: string })
+
+        deriveEscrowAddress(buyerPublicKey: Uint8Array, agreementHash: Uint8Array): { address: string, bump: number }
+          Use PublicKey.findProgramAddressSync with seeds ["escrow", buyer, hash].
+          MUST be deterministic — same inputs always produce same address.
+
+        deriveVaultAddress(escrowPublicKey: Uint8Array): { address: string, bump: number }
+          Seeds: ["vault", escrow_pubkey]
+
+        async createEscrow(params): Promise<{ escrowAddress, vaultAddress, txSignature }>
+          Build make_escrow transaction. For now, construct the instruction data
+          manually (since we may not have the IDL). Include proper PDA derivation.
+
+        async releaseEscrow(params): Promise<{ txSignature }>
+        async disputeEscrow(params): Promise<{ txSignature }>
+        async cancelEscrow(params): Promise<{ txSignature }>
+        async getEscrowStatus(escrowAddress): Promise<EscrowStatus>
+
+      __tests__/escrow.test.ts — At least 12 tests:
+        - Constructor uses default RPC URL
+        - Constructor accepts custom RPC URL
+        - deriveEscrowAddress is deterministic (same input → same output)
+        - deriveEscrowAddress different inputs → different addresses
+        - deriveEscrowAddress returns valid base58 address
+        - deriveVaultAddress is deterministic
+        - deriveVaultAddress differs from escrow address
+        - PDA derivation uses correct seeds (verify seed structure)
+        - Address length is 32-44 characters (base58 encoded Solana address)
+        - Two different agreement hashes produce different escrow addresses
+        - Two different buyers produce different escrow addresses
+        - Vault address depends on escrow address
+
+      Update packages/sdk/src/index.ts to export EscrowManager.
+
+      Run: cd packages/sdk && npx vitest run --reporter=verbose
+    validate:
+      - type: file_exists
+        target: "packages/sdk/src/escrow.ts"
+        label: "Escrow manager exists"
+      - type: file_exists
+        target: "packages/sdk/src/__tests__/escrow.test.ts"
+        label: "Escrow tests exist"
+      - type: file_contains
+        path: "packages/sdk/src/escrow.ts"
+        pattern: "class EscrowManager"
+        label: "EscrowManager class defined"
+      - type: file_contains
+        path: "packages/sdk/src/escrow.ts"
+        pattern: "deriveEscrowAddress"
+        label: "PDA derivation exists"
+      - type: file_contains
+        path: "packages/sdk/src/escrow.ts"
+        pattern: "findProgramAddress"
+        label: "Uses Solana PDA derivation"
+      - type: command_passes
+        command: "cd packages/sdk && npx vitest run src/__tests__/escrow.test.ts --reporter=verbose 2>&1 | tail -20"
+        label: "Escrow tests pass"
+        timeout: 120
+
+  # ==========================================================================
+  # STEP 11: Integrations — A2A, MCP, Lockstep
+  # ==========================================================================
+  - name: "Integrations — A2A, MCP, Lockstep"
+    prompt: |
+      Build integration modules. Review existing, fix issues, ensure quality.
+      All functions must have JSDoc comments.
+
+      1. packages/sdk/src/discovery.ts — A2A Agent Card integration:
+         AgentCard and NegotiationCapability interfaces.
+
+         discoverAgents(endpoints: string[]): Promise<AgentCard[]>
+           Fetch /.well-known/agent.json from each endpoint.
+           Handle failures gracefully (skip unreachable endpoints).
+
+         parseAgentCard(card: AgentCard): SellerInfo | null
+           Extract SellerInfo from negotiation capability block.
+
+      2. packages/sdk/src/lockstep.ts — Lockstep verification integration:
+         agreementToLockstepSpec(agreement: Agreement): object
+           Map SLA metrics to behavioral requirements:
+           { spec_version: "1.0", agent_id, behavioral_requirements: [...],
+             verification_mode: "continuous", on_violation: { action, escrow_address, penalty_rate } }
+
+         class LockstepMonitor:
+           constructor(config: { verificationEndpoint?: string })
+           startMonitoring(agreement): Promise<{ monitoringId }>
+           checkCompliance(monitoringId): Promise<{ compliant, violations }>
+           triggerDispute(monitoringId, violation): Promise<DisputeResult>
+
+      3. packages/mcp-server/src/index.ts — MCP tool wrapper:
+         Export MCP server definition with tools:
+         - negotiate_service: find and negotiate with providers
+         - check_agreement_status: check negotiation/agreement status
+         - list_services: list available categories and sellers
+
+      4. packages/sdk/src/x402.ts — x402 payment bridge:
+         agreementToX402Headers(agreement): Record<string, string>
+         parseX402Response(headers): { price, currency, paymentAddress }
+
+      5. Add tests for lockstep and discovery in existing test files or new ones:
+         - agreementToLockstepSpec produces valid structure
+         - agreementToLockstepSpec maps all SLA metrics
+         - parseAgentCard extracts seller info correctly
+         - parseAgentCard returns null for cards without negotiation capability
+         - x402 headers include agreement ID
+
+      Run: cd packages/sdk && npx vitest run --reporter=verbose
+    validate:
+      - type: file_exists
+        target: "packages/sdk/src/discovery.ts"
+        label: "A2A discovery module exists"
+      - type: file_exists
+        target: "packages/sdk/src/lockstep.ts"
+        label: "Lockstep integration exists"
+      - type: file_exists
+        target: "packages/sdk/src/x402.ts"
+        label: "x402 bridge exists"
+      - type: file_exists
+        target: "packages/mcp-server/src/index.ts"
+        label: "MCP server exists"
+      - type: file_contains
+        path: "packages/sdk/src/lockstep.ts"
+        pattern: "agreementToLockstepSpec"
+        label: "Lockstep spec conversion exists"
+      - type: file_contains
+        path: "packages/sdk/src/discovery.ts"
+        pattern: "discoverAgents"
+        label: "Agent discovery exists"
+      - type: file_contains
+        path: "packages/mcp-server/src/index.ts"
+        pattern: "negotiate_service"
+        label: "MCP negotiate tool exists"
+      - type: command_passes
+        command: "cd packages/sdk && npx vitest run --reporter=verbose 2>&1 | tail -20"
+        label: "SDK tests still pass"
+        timeout: 120
+      - type: command_passes
+        command: "cd packages/mcp-server && npx tsc --noEmit"
+        label: "MCP server compiles"
+        timeout: 60
+
+  # ==========================================================================
+  # STEP 12: Reference Agents
+  # ==========================================================================
+  - name: "Reference Agents"
+    prompt: |
+      Build 5 reference seller agents in packages/reference-agents/.
+      Review existing, fix issues, ensure they compile and are well-documented.
+
+      Each agent uses SellerAgent from @ophir/sdk and adds category-specific logic.
+
+      1. agents/inference.ts — Mock Inference Provider
+         - category: "inference", base_price: "0.005", unit: "request"
+         - Volume discounts: 1000+ → "0.004", 10000+ → "0.003"
+         - SLA: p99 <= 500ms, uptime >= 99.9%, accuracy >= 95%
+
+      2. agents/data-processing.ts — Mock Data Processor
+         - category: "data_processing", base_price: "0.10", unit: "MB"
+         - SLA: throughput >= 500rpm, uptime >= 99.5%
+
+      3. agents/code-review.ts — Mock Code Reviewer
+         - category: "code_review", base_price: "0.001", unit: "line"
+         - SLA: accuracy >= 90%, p99 <= 5000ms
+
+      4. agents/translation.ts — Mock Translator
+         - category: "translation", base_price: "0.02", unit: "word"
+         - SLA: accuracy >= 95%, p99 <= 3000ms
+
+      5. agents/image-generation.ts — Mock Image Generator
+         - category: "image_generation", base_price: "0.05", unit: "image"
+         - SLA: p99 <= 10000ms, uptime >= 99%
+
+      Each agent exports a factory function: create<Type>Agent(config?): SellerAgent
+
+      6. cli.ts — CLI launcher using commander:
+         #!/usr/bin/env node
+         ophir-agents start <type> --port <port>
+         ophir-agents start-all --base-port <port> (defaults 3001-3005)
+         ophir-agents list
+
+      7. index.ts — Export all factory functions
+
+      Run: cd packages/reference-agents && npx tsc --noEmit
+    validate:
+      - type: file_exists
+        target: "packages/reference-agents/src/agents/inference.ts"
+        label: "Inference agent exists"
+      - type: file_exists
+        target: "packages/reference-agents/src/agents/data-processing.ts"
+        label: "Data processing agent exists"
+      - type: file_exists
+        target: "packages/reference-agents/src/agents/code-review.ts"
+        label: "Code review agent exists"
+      - type: file_exists
+        target: "packages/reference-agents/src/agents/translation.ts"
+        label: "Translation agent exists"
+      - type: file_exists
+        target: "packages/reference-agents/src/agents/image-generation.ts"
+        label: "Image generation agent exists"
+      - type: file_exists
+        target: "packages/reference-agents/src/cli.ts"
+        label: "CLI launcher exists"
+      - type: file_contains
+        path: "packages/reference-agents/src/agents/inference.ts"
+        pattern: "createInferenceAgent"
+        label: "Inference factory function exists"
+      - type: command_passes
+        command: "cd packages/reference-agents && npx tsc --noEmit"
+        label: "Reference agents compile"
+        timeout: 120
+
+  # ==========================================================================
+  # STEP 13: Demo Package
+  # ==========================================================================
+  - name: "Demo Package — The Killer Demo"
+    prompt: |
+      Build the demo in packages/demo/. Review existing, fix, make it shine.
+
+      packages/demo/src/index.ts:
+        #!/usr/bin/env node
+
+        The demo MUST run a real negotiation between two agents on localhost.
+        Not mocked. Real HTTP. Real signatures. Real state machine transitions.
+
+        Flow:
+        1. Banner: "Ophir — Agent Negotiation Protocol Demo"
+        2. Start seller (inference provider) on random port
+        3. Start buyer on random port
+        4. Buyer sends RFQ: inference, budget $0.01/request, p99 < 500ms
+        5. Seller responds with quote: $0.005/request
+        6. Buyer counters: $0.003 (volume commitment)
+        7. Seller accepts at $0.004
+        8. Agreement signed by both parties
+        9. Show escrow PDA address (derived, not actually funded in demo)
+        10. Print before/after comparison:
+            WITHOUT Ophir: $0.01/request, no SLA, no recourse → $10/1000 requests
+            WITH Ophir: $0.004/request, p99 SLA, escrow → $4/1000 requests, 60% saved
+        11. Print 15-line buyer code example
+        12. Print 15-line seller code example
+        13. Clean up servers
+
+        Use chalk for colors. Use small delays (200-400ms) for real-time feel.
+
+      packages/demo/src/comparison.ts:
+        Export before/after comparison as reusable function.
+
+      Run: cd packages/demo && npx tsc --noEmit
+    validate:
+      - type: file_exists
+        target: "packages/demo/src/index.ts"
+        label: "Demo entry point exists"
+      - type: file_contains
+        path: "packages/demo/src/index.ts"
+        pattern: "Ophir"
+        label: "Demo mentions Ophir"
+      - type: file_contains
+        path: "packages/demo/src/index.ts"
+        pattern: "BuyerAgent"
+        label: "Demo uses BuyerAgent"
+      - type: file_contains
+        path: "packages/demo/src/index.ts"
+        pattern: "SellerAgent"
+        label: "Demo uses SellerAgent"
+      - type: file_contains
+        path: "packages/demo/src/index.ts"
+        pattern: "0.004"
+        label: "Demo shows negotiated price"
+      - type: command_passes
+        command: "cd packages/demo && npx tsc --noEmit"
+        label: "Demo compiles"
+        timeout: 120
+
+  # ==========================================================================
+  # STEP 14: Documentation
+  # ==========================================================================
+  - name: "Documentation"
+    prompt: |
+      Build comprehensive, Stripe-quality documentation.
+
+      1. ROOT README.md:
+         - One-line: "Ophir lets AI agents negotiate pricing, SLAs, and terms before
+           transacting — the missing commerce layer for the agent economy."
+         - Problem (3 sentences)
+         - Before/After comparison
+         - npm install @ophir/sdk
+         - 15-line buyer example (must be ACTUAL working code, not pseudocode)
+         - 15-line seller example (must be ACTUAL working code)
+         - Protocol state machine (ASCII diagram)
+         - Package links
+         - License: MIT
+
+      2. packages/docs/:
+         - index.md: What is Ophir?
+         - quickstart.md: 5-minute guide, install → negotiate → done
+         - concepts/how-it-works.md: Full flow with diagrams
+         - concepts/sla-schema.md: All 8 metrics, comparisons, penalties
+         - concepts/escrow.md: Solana escrow PDA, 4 instructions, flow
+         - concepts/identity.md: DID:key, Ed25519, Solana compatibility
+         - sdk/buyer.md: BuyerAgent full API reference
+         - sdk/seller.md: SellerAgent full API reference
+         - sdk/messages.md: All 6 message types with JSON examples
+         - protocol/specification.md: Formal protocol spec
+         - protocol/state-machine.md: States, transitions, timeouts
+
+      3. Package READMEs:
+         - packages/protocol/README.md
+         - packages/sdk/README.md
+         - packages/reference-agents/README.md
+         - packages/demo/README.md
+
+      The root README is the most important file in the entire project.
+      Make it compelling. Lead with value, not implementation details.
+    validate:
+      - type: file_exists
+        target: "README.md"
+        label: "Root README exists"
+      - type: file_exists
+        target: "packages/docs/quickstart.md"
+        label: "Quickstart doc exists"
+      - type: file_exists
+        target: "packages/docs/concepts/how-it-works.md"
+        label: "How it works doc exists"
+      - type: file_exists
+        target: "packages/docs/concepts/escrow.md"
+        label: "Escrow docs exist"
+      - type: file_exists
+        target: "packages/docs/protocol/specification.md"
+        label: "Protocol spec doc exists"
+      - type: file_exists
+        target: "packages/sdk/README.md"
+        label: "SDK README exists"
+      - type: file_contains
+        path: "README.md"
+        pattern: "Ophir"
+        label: "README mentions Ophir"
+      - type: file_contains
+        path: "README.md"
+        pattern: "npm install"
+        label: "README has install instructions"
+      - type: file_contains
+        path: "README.md"
+        pattern: "BuyerAgent"
+        label: "README has buyer example"
+      - type: file_contains
+        path: "README.md"
+        pattern: "SellerAgent"
+        label: "README has seller example"
+      - type: file_contains
+        path: "README.md"
+        pattern: "MIT"
+        label: "README mentions MIT license"
+
+  # ==========================================================================
+  # STEP 15: Full Build & Test Suite
+  # ==========================================================================
+  - name: "Full Build and Test Suite"
+    retries: 10
+    timeout: 900
+    prompt: |
+      Final build pass. Fix ALL compilation errors and make EVERY test pass.
+
+      1. Build all packages in order:
+         cd packages/protocol && npm run build
+         cd packages/sdk && npm run build
+         cd packages/reference-agents && npm run build
+         cd packages/demo && npm run build
+         cd packages/mcp-server && npm run build
+
+      2. Fix any TypeScript errors:
+         - Import paths use .js extension (ESM requires it)
+         - All @ophir/protocol types properly imported
+         - No circular dependencies
+         - Zod schemas match TypeScript types
+         - No 'any' types where proper types exist
+
+      3. Run ALL tests:
+         cd packages/protocol && npx vitest run
+         cd packages/sdk && npx vitest run
+
+      4. Count total tests: Must be at least 100 tests across all packages.
+
+      5. Verify exports:
+         - @ophir/protocol exports all types, schemas, errors, constants
+         - @ophir/sdk exports BuyerAgent, SellerAgent, NegotiationSession,
+           EscrowManager, signing, identity, messages, sla, discovery, lockstep, x402
+
+      6. Fix everything until all builds pass and all tests pass.
+
+      Print test summary at the end.
+    validate:
+      - type: command_passes
+        command: "cd packages/protocol && npx tsc --noEmit"
+        label: "Protocol compiles"
+        timeout: 120
+      - type: command_passes
+        command: "cd packages/sdk && npx tsc --noEmit"
+        label: "SDK compiles"
+        timeout: 120
+      - type: command_passes
+        command: "cd packages/reference-agents && npx tsc --noEmit"
+        label: "Reference agents compile"
+        timeout: 120
+      - type: command_passes
+        command: "cd packages/demo && npx tsc --noEmit"
+        label: "Demo compiles"
+        timeout: 120
+      - type: command_passes
+        command: "cd packages/mcp-server && npx tsc --noEmit"
+        label: "MCP server compiles"
+        timeout: 120
+      - type: command_passes
+        command: "cd packages/protocol && npx vitest run 2>&1 | tail -5"
+        label: "Protocol tests pass"
+        timeout: 120
+      - type: command_passes
+        command: "cd packages/sdk && npx vitest run 2>&1 | tail -10"
+        label: "SDK tests pass"
+        timeout: 300
+
+  # ==========================================================================
+  # STEP 16: Fix Crypto — Add signatures to ALL message types
+  # ==========================================================================
+  - name: "Fix Crypto — Sign and Verify ALL Messages"
+    retries: 7
+    timeout: 900
+    prompt: |
+      CRITICAL SECURITY FIX: The protocol has a cryptographic gap — RFQ and Reject
+      messages have NO signature fields. This means any agent can forge an RFQ
+      claiming to be someone else, or reject negotiations without authorization.
+
+      You MUST fix this across the entire stack:
+
+      1. packages/protocol/src/types.ts:
+         - Add "signature: string" field to RFQParams interface
+         - Add "signature: string" field to RejectParams interface
+         - Add JSDoc to EVERY interface explaining the field
+         - Add JSDoc to EVERY field in EVERY interface (not just the interface itself)
+
+      2. packages/protocol/src/schemas.ts:
+         - Update RFQParamsSchema to require and validate signature (base64 Ed25519)
+         - Update RejectParamsSchema to require and validate signature
+         - Ensure ALL 6 message schemas validate signatures where present
+
+      3. packages/sdk/src/messages.ts:
+         - Update buildRFQ to accept secretKey parameter and SIGN the RFQ params
+         - Update buildReject to accept secretKey parameter and SIGN the reject params
+         - Verify ALL 6 builders sign their messages (RFQ, Quote, Counter, Accept, Reject, Dispute)
+
+      4. packages/sdk/src/seller.ts:
+         - In the RFQ handler: VERIFY the buyer's signature on incoming RFQs
+           Extract buyer's public key from buyer.agent_id (DID), verify signature.
+           Reject RFQs with invalid signatures by ignoring them.
+         - Add JSDoc explaining the verification flow
+
+      5. packages/sdk/src/buyer.ts:
+         - Verify seller's signature on ALL incoming messages (quotes, counters, accepts)
+         - Verify the buyer is signing ALL outgoing messages (RFQ, counter, accept, reject)
+         - In acceptQuote: verify seller's quote signature BEFORE trusting pricing/SLA
+         - Add JSDoc explaining the verification flow
+
+      6. Update ALL calling code that uses buildRFQ and buildReject to pass secretKey.
+         This includes: buyer.ts requestQuotes(), buyer.ts reject(), demo, reference agents.
+
+      7. Fix compilation: cd packages/protocol && npx tsc --noEmit
+         Fix compilation: cd packages/sdk && npx tsc --noEmit
+
+      8. Fix tests: cd packages/sdk && npx vitest run
+         Update any tests that construct RFQ/Reject messages to include signatures.
+
+      The rule is simple: EVERY message in the protocol MUST be signed by its sender,
+      and EVERY receiver MUST verify the signature before trusting the message.
+    validate:
+      - type: file_contains
+        path: "packages/protocol/src/types.ts"
+        pattern: "signature.*string"
+        is_regex: true
+        label: "RFQParams has signature field"
+      - type: file_contains
+        path: "packages/sdk/src/messages.ts"
+        pattern: "signMessage"
+        label: "All builders use signMessage"
+      - type: file_contains
+        path: "packages/sdk/src/seller.ts"
+        pattern: "verifyMessage"
+        label: "Seller verifies signatures"
+      - type: file_contains
+        path: "packages/sdk/src/buyer.ts"
+        pattern: "verifyMessage"
+        label: "Buyer verifies signatures"
+      - type: command_passes
+        command: "cd packages/protocol && npx tsc --noEmit"
+        label: "Protocol compiles"
+        timeout: 60
+      - type: command_passes
+        command: "cd packages/sdk && npx tsc --noEmit"
+        label: "SDK compiles"
+        timeout: 60
+      - type: command_passes
+        command: "cd packages/sdk && npx vitest run 2>&1 | tail -10"
+        label: "SDK tests pass after crypto fix"
+        timeout: 300
+
+  # ==========================================================================
+  # STEP 17: Fix Escrow Design — Production-quality Anchor program
+  # ==========================================================================
+  - name: "Fix Escrow — Production-Quality Anchor Program"
+    retries: 7
+    timeout: 900
+    prompt: |
+      Harden the Solana escrow Anchor program to production quality.
+
+      Read packages/escrow/programs/ophir-escrow/src/lib.rs and fix ALL issues:
+
+      1. DOCUMENTATION — Every single item must have doc comments (///):
+         - Module-level doc comment explaining what this program does
+         - Each instruction function: what it does, who can call it, what it validates
+         - Each Account struct: what instruction it serves, what each account is
+         - Each field in EscrowAccount: what it stores, valid ranges, units
+         - Each error variant: when it's triggered, what the caller should do
+         - Each event: when it's emitted, what consumers should do with the data
+         - Add comment on bump field: "Stored for CPI signing in release/dispute/cancel"
+         - Add comment on vault: "Token account owned by escrow PDA, holds deposited funds"
+
+      2. ACCOUNT CONSTRAINTS — Use Anchor's has_one where possible:
+         - ReleaseEscrow: use has_one = seller instead of manual constraint
+         - DisputeEscrow: use has_one = buyer instead of manual constraint
+         - CancelEscrow: use has_one = buyer instead of manual constraint
+         - MakeEscrow: the seller field should be documented as unchecked
+           (explain WHY it's unchecked: because the buyer specifies who they negotiate with)
+         - Add error messages to all constraint failures: @ EscrowError::XxxError
+
+      3. OVERFLOW PROTECTION:
+         - All arithmetic MUST use checked operations or Anchor's checked math
+         - Penalty calculation: use u128 intermediate to prevent overflow
+         - Verify: deposit_amount * penalty_rate_bps can't overflow u64 (use u128)
+         - Add explicit overflow error variant if needed
+
+      4. STATUS CHECKS:
+         - Verify status == Active is checked in EVERY instruction that modifies state
+         - Verify no instruction can be called twice (double-release, double-dispute, etc.)
+         - Document the status lifecycle in a module-level comment
+
+      5. EVENTS:
+         - Every state change MUST emit an event
+         - Each event should have a doc comment explaining when it fires
+         - Verify: EscrowCreated, EscrowReleased, EscrowDisputed, EscrowCancelled all exist
+
+      6. PDA SEEDS:
+         - Add a comment block at the top of the module documenting ALL PDA seed patterns:
+           Escrow PDA: ["escrow", buyer_pubkey, agreement_hash] → EscrowAccount
+           Vault PDA: ["vault", escrow_pubkey] → TokenAccount (vault)
+         - Verify seeds are consistent between derivation and validation
+
+      After fixing, verify compilation if anchor is available:
+      cd packages/escrow && anchor build 2>&1 || echo "Anchor not available, source reviewed"
+    validate:
+      - type: file_exists
+        target: "packages/escrow/programs/ophir-escrow/src/lib.rs"
+        label: "Escrow source exists"
+      - type: file_contains
+        path: "packages/escrow/programs/ophir-escrow/src/lib.rs"
+        pattern: "/// "
+        label: "Has doc comments"
+      - type: file_contains
+        path: "packages/escrow/programs/ophir-escrow/src/lib.rs"
+        pattern: "has_one"
+        label: "Uses has_one constraints"
+      - type: file_contains
+        path: "packages/escrow/programs/ophir-escrow/src/lib.rs"
+        pattern: "checked"
+        is_regex: false
+        label: "Uses checked arithmetic"
+      - type: file_contains
+        path: "packages/escrow/programs/ophir-escrow/src/lib.rs"
+        pattern: "EscrowCreated"
+        label: "Events defined"
+      - type: file_contains
+        path: "packages/escrow/programs/ophir-escrow/src/lib.rs"
+        pattern: "PDA"
+        is_regex: false
+        label: "PDA documentation exists"
+
+  # ==========================================================================
+  # STEP 18: Fix Protocol Design — Complete schemas and documentation
+  # ==========================================================================
+  - name: "Fix Protocol — Complete Schemas and Documentation"
+    retries: 7
+    timeout: 900
+    prompt: |
+      Harden the @ophir/protocol package to be a complete, well-documented
+      protocol specification package.
+
+      1. packages/protocol/src/types.ts:
+         - EVERY interface must have a JSDoc block with:
+           /** Description of what this type represents */
+           And EVERY field must have a JSDoc comment:
+           /** The unique identifier for this RFQ (UUID v4) */
+           rfq_id: string;
+         - Add a section comment before each group of related types
+         - Document the NegotiationState enum: describe each state and what
+           transitions are valid FROM that state
+         - Add @example blocks showing valid instances for key types (RFQParams, QuoteParams)
+
+      2. packages/protocol/src/schemas.ts:
+         - Every Zod schema should have .describe() calls on fields for auto-documentation
+         - Ensure UUID validation uses proper regex: /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+         - Ensure ISO 8601 datetime validation
+         - Ensure did:key format validation: starts with "did:key:z6Mk"
+         - Ensure base64 signature validation: decode and check length === 64
+         - Ensure SHA-256 hex validation: /^[0-9a-f]{64}$/i
+         - Ensure ALL 6 message params have complete Zod schemas
+         - Add schema for NegotiationState as z.enum([...all 11 states])
+
+      3. packages/protocol/src/errors.ts:
+         - Add JSDoc to EVERY OphirErrorCode enum variant:
+           /** Thrown when a received message fails JSON schema or Zod validation */
+           INVALID_MESSAGE = 'OPHIR_001',
+         - Add JSDoc to OphirError class and its constructor
+
+      4. packages/protocol/src/constants.ts:
+         - Add JSDoc to DEFAULT_CONFIG and every field within it
+         - Document units (milliseconds, basis points, etc.)
+
+      5. packages/protocol/src/methods.ts:
+         - Add JSDoc to METHODS object and each method constant
+
+      6. packages/protocol/src/sla-schema.ts:
+         - Add JSDoc describing the JSON Schema purpose
+         - Ensure the schema follows JSON Schema draft 2020-12
+
+      7. packages/protocol/src/index.ts:
+         - Verify ALL types, schemas, errors, constants, methods are exported
+         - Add a module-level JSDoc: /** @ophir/protocol — Protocol types, schemas, and constants for the Ophir Agent Negotiation Protocol */
+
+      8. Fix compilation and tests:
+         cd packages/protocol && npx tsc --noEmit
+         cd packages/protocol && npx vitest run
+    validate:
+      - type: file_contains
+        path: "packages/protocol/src/types.ts"
+        pattern: "@example"
+        label: "Types have @example JSDoc"
+      - type: file_contains
+        path: "packages/protocol/src/errors.ts"
+        pattern: "Thrown when"
+        label: "Error codes have JSDoc descriptions"
+      - type: file_contains
+        path: "packages/protocol/src/schemas.ts"
+        pattern: "\\.describe\\("
+        is_regex: true
+        label: "Schemas use .describe()"
+      - type: command_passes
+        command: "cd packages/protocol && npx tsc --noEmit"
+        label: "Protocol compiles"
+        timeout: 60
+      - type: command_passes
+        command: "cd packages/protocol && npx vitest run 2>&1 | tail -5"
+        label: "Protocol tests pass"
+        timeout: 120
+
+  # ==========================================================================
+  # STEP 19: Fix Test Coverage — Adversarial and edge case tests
+  # ==========================================================================
+  - name: "Fix Tests — Adversarial Crypto and Edge Cases"
+    retries: 7
+    timeout: 900
+    prompt: |
+      Add missing test coverage. The codebase has ~348 tests but is MISSING
+      critical adversarial and edge case tests. Add them.
+
+      1. packages/sdk/src/__tests__/signing.test.ts — Add if missing:
+         - Test that buildRFQ now produces a signed RFQ (verify with buyer key)
+         - Test that buildReject now produces a signed Reject (verify with signer key)
+         - Test forged RFQ (sign with key A, verify with key B) → fails
+         - Test RFQ with tampered buyer.agent_id after signing → signature fails
+         - Test empty canonicalize input → deterministic output
+         - Test canonicalize with special characters (unicode, emoji, newlines)
+
+      2. packages/sdk/src/__tests__/messages.test.ts — Add if missing:
+         - Test buildRFQ requires secretKey parameter
+         - Test buildRFQ signature is verifiable with buyer's public key
+         - Test buildReject requires secretKey parameter
+         - Test buildReject signature is verifiable
+         - Test ALL 6 builders produce unique message IDs on each call
+         - Test ALL 6 builders set correct JSON-RPC method names
+         - Test buildQuote with modified pricing → different signature
+         - Test buildAccept agreement_hash is SHA-256 hex (64 chars)
+
+      3. packages/sdk/src/__tests__/seller.test.ts — Add if missing:
+         - Test seller rejects RFQ with invalid signature (signed by wrong key)
+         - Test seller rejects RFQ with missing signature
+         - Test seller verifies buyer counter-offer signature
+         - Test seller rejects counter with invalid signature
+
+      4. packages/sdk/src/__tests__/buyer.test.ts — Add if missing:
+         - Test buyer verifies seller quote signature before accepting
+         - Test buyer rejects quote with invalid signature
+         - Test buyer signs RFQ with its own key
+         - Test buyer signs reject with its own key
+
+      5. packages/sdk/src/__tests__/integration.test.ts — Add if missing:
+         - Test full flow with signature verification at every step:
+           buyer signs RFQ → seller verifies → seller signs quote →
+           buyer verifies → buyer signs accept → seller verifies
+         - Test that forged quote (wrong seller key) is rejected by buyer
+         - Test expired quote is handled correctly
+
+      6. packages/sdk/src/__tests__/negotiation.test.ts — Verify exists:
+         - All 11 states tested
+         - All valid transitions tested
+         - All INVALID transitions tested (at least 10 invalid cases)
+         - MAX_ROUNDS_EXCEEDED tested
+
+      7. packages/protocol/src/__tests__/schemas.test.ts — Add if missing:
+         - Test RFQParamsSchema validates signature field
+         - Test RejectParamsSchema validates signature field
+         - Test all schemas reject empty strings for required string fields
+         - Test all schemas reject null for required fields
+
+      After adding tests, run ALL tests and fix any failures:
+      cd packages/protocol && npx vitest run --reporter=verbose
+      cd packages/sdk && npx vitest run --reporter=verbose
+
+      Print the final test count summary.
+    validate:
+      - type: file_contains
+        path: "packages/sdk/src/__tests__/seller.test.ts"
+        pattern: "invalid signature"
+        is_regex: false
+        label: "Seller has invalid signature test"
+      - type: file_contains
+        path: "packages/sdk/src/__tests__/buyer.test.ts"
+        pattern: "invalid signature"
+        is_regex: false
+        label: "Buyer has invalid signature test"
+      - type: file_contains
+        path: "packages/sdk/src/__tests__/messages.test.ts"
+        pattern: "buildRFQ.*sign"
+        is_regex: true
+        label: "RFQ signing tested"
+      - type: command_passes
+        command: "cd packages/protocol && npx vitest run 2>&1 | tail -5"
+        label: "Protocol tests pass"
+        timeout: 120
+      - type: command_passes
+        command: "cd packages/sdk && npx vitest run 2>&1 | tail -10"
+        label: "SDK tests pass"
+        timeout: 300
+
+  # ==========================================================================
+  # STEP 20: Fix DX and Architecture — JSDoc and clean exports
+  # ==========================================================================
+  - name: "Fix DX — JSDoc, Clean Exports, README Examples"
+    retries: 7
+    timeout: 900
+    prompt: |
+      Polish developer experience, architecture, and documentation.
+
+      1. JSDoc on ALL public functions in packages/sdk/src/:
+         Every exported function and class method must have:
+         /** One-line description
+          * @param paramName - Description
+          * @returns Description
+          * @throws {OphirError} When...
+          * @example
+          * ```typescript
+          * const result = await doThing(param);
+          * ```
+          */
+         Files to check: buyer.ts, seller.ts, signing.ts, identity.ts, messages.ts,
+         sla.ts, escrow.ts, transport.ts, server.ts, negotiation.ts, discovery.ts,
+         lockstep.ts, x402.ts
+
+      2. Clean exports in packages/sdk/src/index.ts:
+         - Export EVERY public class: BuyerAgent, SellerAgent, NegotiationSession,
+           EscrowManager, JsonRpcClient, NegotiationServer, LockstepMonitor
+         - Export EVERY public function: canonicalize, sign, verify, agreementHash,
+           signMessage, verifyMessage, generateKeyPair, publicKeyToDid, didToPublicKey,
+           generateAgentIdentity, buildRFQ, buildQuote, buildCounter, buildAccept,
+           buildReject, buildDispute, compareSLAs, meetsSLARequirements,
+           slaToLockstepSpec, discoverAgents, parseAgentCard,
+           agreementToLockstepSpec, agreementToX402Headers
+         - Export SLA_TEMPLATES
+         - Export ALL types from types.ts
+         - Re-export ALL types from @ophir/protocol
+
+      3. README.md — Verify the buyer and seller examples are ACTUAL WORKING CODE:
+         The 15-line buyer example must use the REAL API:
+         - import { BuyerAgent } from '@ophir/sdk'
+         - new BuyerAgent({ endpoint: '...' })
+         - buyer.requestQuotes({ sellers, service, budget, sla })
+         - buyer.waitForQuotes(session)
+         - buyer.rankQuotes(quotes, 'cheapest')
+         - buyer.acceptQuote(best)
+
+         The 15-line seller example must use the REAL API:
+         - import { SellerAgent } from '@ophir/sdk'
+         - new SellerAgent({ endpoint: '...', services: [...] })
+         - seller.onRFQ(async (rfq) => seller.generateQuote(rfq))
+         - seller.listen(3000)
+
+         If the current examples don't match the actual API, fix them.
+
+      4. No 'any' types — grep for ': any' and replace with proper types.
+         Exceptions: Record<string, any> is OK for flexible key-value maps.
+
+      5. Consistent error handling — every throw should be:
+         throw new OphirError(OphirErrorCode.SPECIFIC_CODE, 'Human message', optionalData)
+         Not: throw new Error('...')
+
+      6. Compile and test everything:
+         cd packages/protocol && npx tsc --noEmit
+         cd packages/sdk && npx tsc --noEmit
+         cd packages/reference-agents && npx tsc --noEmit
+         cd packages/demo && npx tsc --noEmit
+         cd packages/mcp-server && npx tsc --noEmit
+         cd packages/sdk && npx vitest run
+    validate:
+      - type: command_passes
+        command: "cd packages/protocol && npx tsc --noEmit"
+        label: "Protocol compiles"
+        timeout: 60
+      - type: command_passes
+        command: "cd packages/sdk && npx tsc --noEmit"
+        label: "SDK compiles"
+        timeout: 60
+      - type: command_passes
+        command: "cd packages/reference-agents && npx tsc --noEmit"
+        label: "Reference agents compile"
+        timeout: 60
+      - type: command_passes
+        command: "cd packages/demo && npx tsc --noEmit"
+        label: "Demo compiles"
+        timeout: 60
+      - type: command_passes
+        command: "cd packages/sdk && npx vitest run 2>&1 | tail -10"
+        label: "All tests pass"
+        timeout: 300
+      - type: file_contains
+        path: "packages/sdk/src/index.ts"
+        pattern: "BuyerAgent"
+        label: "BuyerAgent exported"
+      - type: file_contains
+        path: "packages/sdk/src/index.ts"
+        pattern: "SellerAgent"
+        label: "SellerAgent exported"
+      - type: file_contains
+        path: "packages/sdk/src/index.ts"
+        pattern: "EscrowManager"
+        label: "EscrowManager exported"
+
+  # ==========================================================================
+  # STEP 21: Final AI Judge
+  # ==========================================================================
+  - name: "Final Quality Gate"
+    retries: 10
+    timeout: 900
+    prompt: |
+      Final quality pass before the AI judge. Review the ENTIRE codebase one more time.
+
+      Run these checks and fix any remaining issues:
+
+      1. cd packages/protocol && npx tsc --noEmit (must pass)
+      2. cd packages/sdk && npx tsc --noEmit (must pass)
+      3. cd packages/reference-agents && npx tsc --noEmit (must pass)
+      4. cd packages/demo && npx tsc --noEmit (must pass)
+      5. cd packages/mcp-server && npx tsc --noEmit (must pass)
+      6. cd packages/protocol && npx vitest run (must pass)
+      7. cd packages/sdk && npx vitest run (must pass)
+
+      Then verify these SPECIFIC things the AI judge checks:
+
+      PROTOCOL DESIGN:
+      - All 6 message types have TypeScript interfaces AND Zod schemas
+      - ALL message types have signature fields (RFQ, Quote, Counter, Accept, Reject, Dispute)
+      - NegotiationState has all 11 states
+      - State machine enforces all transitions
+
+      CRYPTO CORRECTNESS:
+      - tweetnacl.sign.detached used for signing
+      - json-stable-stringify used for canonicalization
+      - SHA-256 for agreement hashes
+      - DID:key with 0xed01 multicodec prefix
+      - ALL received messages have signatures VERIFIED before trusting
+      - Key lengths validated (32 for public, 64 for secret)
+
+      TEST COVERAGE:
+      - Count total it() blocks — must be 100+
+      - Adversarial crypto tests exist (wrong key, tampered data)
+      - State machine tests cover all valid AND invalid transitions
+      - HTTP integration tests exist
+      - Message builder tests verify signatures
+
+      ESCROW DESIGN:
+      - Anchor program has doc comments on everything
+      - has_one constraints used
+      - Checked arithmetic for penalty calculation
+      - All 4 instructions complete with status checks
+      - Events emitted
+
+      DOCUMENTATION:
+      - README has value proposition, before/after, working code examples
+      - JSDoc on all public functions
+
+      Fix anything that's not perfect. This is the final pass.
+    validate:
+      - type: command_passes
+        command: "cd packages/protocol && npx tsc --noEmit"
+        label: "Protocol compiles"
+        timeout: 60
+      - type: command_passes
+        command: "cd packages/sdk && npx tsc --noEmit"
+        label: "SDK compiles"
+        timeout: 60
+      - type: command_passes
+        command: "cd packages/protocol && npx vitest run 2>&1 | tail -5"
+        label: "Protocol tests pass"
+        timeout: 120
+      - type: command_passes
+        command: "cd packages/sdk && npx vitest run 2>&1 | tail -10"
+        label: "SDK tests pass"
+        timeout: 300
+      - type: ai_judge
+        criteria: |
+          Evaluate the Ophir (Agent Negotiation Protocol) implementation on these
+          7 dimensions. Score EACH dimension 1-10.
+
+          1. Protocol Design:
+             All 6 message types (RFQ, Quote, Counter, Accept, Reject, Dispute)
+             must have TypeScript interfaces with JSDoc AND Zod runtime schemas.
+             ALL message types must have signature fields for cryptographic auth.
+             The negotiation state machine must have all 11 states with enforced transitions.
+             JSON-RPC envelopes must be correct (jsonrpc: "2.0", method, id, params).
+
+          2. Cryptographic Correctness:
+             Signing must use tweetnacl Ed25519 sign.detached (NOT sign()).
+             JCS canonicalization must use json-stable-stringify for determinism.
+             SHA-256 must be used for agreement hashes with hex encoding.
+             DID:key must use correct Ed25519 multicodec prefix (0xed, 0x01).
+             ALL received messages must have signatures VERIFIED before trusting.
+             Key lengths must be validated (32 bytes public, 64 bytes secret).
+             Both buyer AND seller must verify each other's signatures.
+
+          3. Developer Experience:
+             BuyerAgent must be usable in ~15 lines of code.
+             SellerAgent must be usable in ~15 lines of code.
+             Good defaults must exist. API must be intuitive.
+             JSDoc comments with @param, @returns, @example on public functions.
+
+          4. Architecture:
+             Monorepo with clean package boundaries.
+             @ophir/protocol has minimal dependencies (Zod only).
+             Clear separation between protocol types, SDK, and applications.
+
+          5. Test Coverage:
+             100+ test cases across the test suite.
+             Adversarial crypto tests (wrong key → fail, tampered data → fail).
+             State machine tests for all valid AND invalid transitions.
+             HTTP integration tests with real buyer↔seller communication.
+             Message builder tests that verify produced signatures.
+             Signature verification tests in buyer and seller agents.
+
+          6. Escrow Design:
+             Anchor program with doc comments (///) on all items.
+             has_one constraints used for account validation.
+             Checked arithmetic (u128 intermediate) for penalty calculation.
+             All 4 instructions (make, release, dispute, cancel) complete.
+             Status checks preventing double-actions.
+             Events emitted for all state changes.
+             PDA seed patterns documented.
+
+          7. Documentation:
+             README with clear value proposition and before/after comparison.
+             Working TypeScript code examples (not pseudocode).
+             Quickstart guide and protocol specification.
+        threshold: 9.0
+        evaluation_targets:
+          - "packages/protocol/src/"
+          - "packages/sdk/src/"
+          - "packages/escrow/programs/ophir-escrow/src/"
+          - "README.md"
+          - "packages/docs/"
+        label: "AI judge scores 9+ across all dimensions"
