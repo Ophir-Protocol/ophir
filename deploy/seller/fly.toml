@@ -21,10 +21,7 @@ primary_region = "iad"
     handlers = ["tls", "http"]
     port = 443
 
-  [[services.http_checks]]
+  [[services.tcp_checks]]
     interval = 15000
-    grace_period = "10s"
-    method = "GET"
-    path = "/health"
-    protocol = "http"
+    grace_period = "30s"
     timeout = 5000
