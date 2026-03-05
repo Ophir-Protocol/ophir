@@ -46,6 +46,34 @@ services:
       - ophir
     restart: unless-stopped
 
+  gateway:
+    build:
+      context: ../..
+      dockerfile: deploy/gateway/Dockerfile
+    container_name: ophir-gateway
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - NODE_ENV=production
+      - OPHIR_REGISTRY_URL=http://registry:8420
+      - OPHIR_STRATEGY=${OPHIR_STRATEGY:-cheapest}
+      - OPHIR_MAX_BUDGET=${OPHIR_MAX_BUDGET:-1.00}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      registry:
+        condition: service_healthy
+      router:
+        condition: service_healthy
+    networks:
+      - ophir
+    restart: unless-stopped
+
   seller:
     build:
       context: ../..
