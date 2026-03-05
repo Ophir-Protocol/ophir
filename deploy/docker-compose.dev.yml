@@ -1,0 +1,26 @@
+# Development overlay — use with:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+#
+# Mounts local source and uses tsx for hot-reloading instead of compiled dist.
+
+services:
+  registry:
+    command: npx tsx packages/registry/src/bin.ts
+    volumes:
+      - ../../packages:/app/packages
+    environment:
+      - NODE_ENV=development
+
+  router:
+    command: npx tsx packages/router/src/bin.ts
+    volumes:
+      - ../../packages:/app/packages
+    environment:
+      - NODE_ENV=development
+
+  seller:
+    command: npx tsx packages/live-seller/src/index.ts
+    volumes:
+      - ../../packages:/app/packages
+    environment:
+      - NODE_ENV=development

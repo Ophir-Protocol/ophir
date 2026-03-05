@@ -1,0 +1,29 @@
+app = "ophir-router"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8421"
+  OPHIR_REGISTRY_URL = "https://ophir-registry.fly.dev"
+
+[[services]]
+  internal_port = 8421
+  protocol = "tcp"
+
+  [[services.ports]]
+    handlers = ["http"]
+    port = 80
+
+  [[services.ports]]
+    handlers = ["tls", "http"]
+    port = 443
+
+  [[services.http_checks]]
+    interval = 15000
+    grace_period = "10s"
+    method = "GET"
+    path = "/health"
+    protocol = "http"
+    timeout = 5000

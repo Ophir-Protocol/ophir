@@ -1,0 +1,79 @@
+services:
+  registry:
+    build:
+      context: ../..
+      dockerfile: deploy/registry/Dockerfile
+    container_name: ophir-registry
+    ports:
+      - "8420:8420"
+    volumes:
+      - registry-data:/data
+    environment:
+      - PORT=8420
+      - DB_PATH=/data/ophir-registry.db
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8420/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - ophir
+    restart: unless-stopped
+
+  router:
+    build:
+      context: ../..
+      dockerfile: deploy/router/Dockerfile
+    container_name: ophir-router
+    ports:
+      - "8421:8421"
+    environment:
+      - PORT=8421
+      - OPHIR_REGISTRY_URL=http://registry:8420
+      - OPHIR_STRATEGY=${OPHIR_STRATEGY:-cheapest}
+      - OPHIR_MAX_BUDGET=${OPHIR_MAX_BUDGET:-1.00}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8421/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      registry:
+        condition: service_healthy
+    networks:
+      - ophir
+    restart: unless-stopped
+
+  seller:
+    build:
+      context: ../..
+      dockerfile: deploy/seller/Dockerfile
+    container_name: ophir-seller
+    ports:
+      - "8422:8422"
+    environment:
+      - SELLER_PORT=8422
+      - SELLER_ENDPOINT=http://seller:8422
+      - OPHIR_REGISTRY_URL=http://registry:8420
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8422/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    depends_on:
+      registry:
+        condition: service_healthy
+    networks:
+      - ophir
+    restart: unless-stopped
+
+networks:
+  ophir:
+    driver: bridge
+
+volumes:
+  registry-data:

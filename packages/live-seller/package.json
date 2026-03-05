@@ -1,0 +1,23 @@
+{
+  "name": "@ophirai/live-seller",
+  "version": "0.2.0",
+  "description": "Live Ophir seller wrapping OpenRouter — auto-registers and responds to RFQs",
+  "type": "module",
+  "private": true,
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ophirai/protocol": "*",
+    "@ophirai/sdk": "*",
+    "@ophirai/providers": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "tsx": "^4.0.0"
+  }
+}

@@ -1,0 +1,33 @@
+app = "ophir-registry"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8420"
+  DB_PATH = "/data/ophir-registry.db"
+
+[mounts]
+  source = "registry_data"
+  destination = "/data"
+
+[[services]]
+  internal_port = 8420
+  protocol = "tcp"
+
+  [[services.ports]]
+    handlers = ["http"]
+    port = 80
+
+  [[services.ports]]
+    handlers = ["tls", "http"]
+    port = 443
+
+  [[services.http_checks]]
+    interval = 15000
+    grace_period = "10s"
+    method = "GET"
+    path = "/health"
+    protocol = "http"
+    timeout = 5000
