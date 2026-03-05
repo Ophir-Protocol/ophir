@@ -1,20 +1,26 @@
 name: ophir-negotiate
-display_name: "Ophir — AI Agent Negotiation"
+display_name: "Ophir -- Agent-to-Agent Commerce and Negotiation"
 description: |
-  Negotiate with AI service providers to get the best price, SLA guarantees,
-  and automatic provider switching. Your agent discovers providers, compares
-  quotes, and signs agreements — all autonomously.
+  Enable autonomous agent-to-agent commerce through the Ophir protocol.
+  Your AI agent can discover service providers, negotiate pricing and SLA
+  terms, sign binding agreements, monitor compliance, and file disputes --
+  all without human intervention.
 
-  Tools:
-  - ophir_discover: Find available AI providers
-  - ophir_negotiate: Run full negotiation (discover → quote → accept)
-  - ophir_accept_quote: Accept a specific provider's quote
-  - ophir_check_agreement: Monitor active agreement SLA compliance
-  - ophir_list_agreements: View all active agreements
-  - ophir_dispute: File a dispute for SLA violations
+  Ophir implements a full A2A (agent-to-agent) negotiation lifecycle:
+  discover providers on the network, send RFQs (requests for quote),
+  compare competing offers, accept the best deal, and continuously
+  monitor SLA compliance with cryptographic enforcement.
 
-  No API keys needed — connects to the public Ophir registry.
-version: "0.1.0"
+  Tools provided:
+  - ophir_discover: Search the Ophir network for service providers by category, reputation, or pricing
+  - ophir_negotiate: Run a complete negotiation flow (discover, RFQ, quote collection, ranking)
+  - ophir_accept_quote: Accept a provider quote to create a signed, enforceable agreement
+  - ophir_check_agreement: Monitor active agreement SLA compliance in real time
+  - ophir_list_agreements: View all active agreements with pricing and status
+  - ophir_dispute: File a dispute for SLA violations with cryptographic evidence
+
+  No API keys required. Connects to the public Ophir registry out of the box.
+version: "0.2.0"
 author: "Ophir Protocol"
 license: "MIT"
 repository: "https://github.com/ophirai/ophir"
@@ -24,13 +30,15 @@ categories:
   - "negotiation"
   - "infrastructure"
   - "cost-optimization"
+  - "commerce"
 tags:
-  - "inference"
-  - "llm"
-  - "provider"
-  - "sla"
+  - "mcp"
+  - "ai-agents"
   - "negotiation"
-  - "multi-provider"
+  - "commerce"
+  - "protocol"
+  - "ophir"
+  - "a2a"
 install:
   type: "npx"
   command: "npx @ophirai/mcp-server"

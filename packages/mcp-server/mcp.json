@@ -1,7 +1,7 @@
 {
   "name": "ophir-negotiate",
-  "version": "0.1.0",
-  "description": "AI agent negotiation protocol — discover providers, negotiate prices, enforce SLAs",
+  "version": "0.2.0",
+  "description": "Agent-to-agent commerce protocol -- discover providers, negotiate pricing and SLAs, sign agreements, and enforce compliance autonomously",
   "transport": "stdio",
   "command": "npx",
   "args": ["@ophirai/mcp-server"],

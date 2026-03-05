@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "ophir": {
+      "command": "npx",
+      "args": ["@ophirai/mcp-server"]
+    }
+  }
+}
