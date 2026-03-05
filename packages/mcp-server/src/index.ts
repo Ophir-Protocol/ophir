@@ -3,6 +3,7 @@ import type { SellerInfo, Agreement } from '@ophirai/sdk';
 import type { SLAMetric } from '@ophirai/protocol';
 import { StdioTransport } from './stdio.js';
 import type { JsonRpcRequest, JsonRpcResponse } from './stdio.js';
+import { VERSION } from './version.js';
 
 // ── MCP Tool Definitions ─────────────────────────────────────────────
 
@@ -26,35 +27,73 @@ export interface MCPToolDefinition {
 
 export const TOOLS: MCPToolDefinition[] = [
   {
-    name: 'negotiate_service',
+    name: 'ophir_discover',
     description:
-      'Send an RFQ to known sellers for a service category, collect quotes, and return the best option.',
+      'Use when you need to find AI service providers. Returns a list of available providers with their models, pricing, and capabilities. Call this first before negotiating. Optionally filter by service category or minimum reputation score.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        category: {
+          type: 'string',
+          description: 'Service category to filter by (e.g. "inference", "translation", "code_review"). Omit to list all providers.',
+        },
+        min_reputation: {
+          type: 'number',
+          description: 'Minimum reputation score (0-100) to filter sellers. Only providers at or above this score are returned.',
+        },
+      },
+    },
+  },
+  {
+    name: 'ophir_negotiate',
+    description:
+      'Use when you want to get the best deal on AI inference. Automatically discovers providers, collects quotes, and accepts the cheapest one that meets your requirements. Returns the best quote with pricing and SLA details. This is the main tool — use it for one-shot negotiation.',
     inputSchema: {
       type: 'object',
       properties: {
         service_category: {
           type: 'string',
-          description: 'Category of service needed (e.g. inference, translation, code_review)',
+          description: 'Category of service needed (e.g. "inference", "translation", "code_review")',
         },
         requirements: {
           type: 'object',
-          description: 'Optional specific requirements for the service',
+          description: 'Specific requirements for the service (e.g. {"model": "gpt-4", "max_tokens": 4096})',
         },
         max_budget: {
           type: 'string',
-          description: 'Maximum price per unit willing to pay',
+          description: 'Maximum price per unit willing to pay (e.g. "0.01")',
         },
         currency: {
           type: 'string',
-          description: 'Payment currency (default: USDC)',
+          description: 'Payment currency (default: "USDC")',
         },
       },
       required: ['service_category', 'max_budget'],
     },
   },
   {
-    name: 'check_agreement_status',
-    description: 'Check the current status of a negotiation or agreement.',
+    name: 'ophir_accept_quote',
+    description:
+      'Use when you have received multiple quotes from ophir_negotiate and want to accept a specific one instead of the auto-selected best. Requires the rfq_id and quote_id from a previous negotiation. Creates a signed agreement with the chosen seller.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        rfq_id: {
+          type: 'string',
+          description: 'The RFQ ID from a previous ophir_negotiate call',
+        },
+        quote_id: {
+          type: 'string',
+          description: 'The specific quote ID to accept',
+        },
+      },
+      required: ['rfq_id', 'quote_id'],
+    },
+  },
+  {
+    name: 'ophir_check_agreement',
+    description:
+      'Use when you need to check the status of an existing agreement. Returns pricing, SLA terms, escrow status, and compliance details for a given agreement ID. Call this to verify an agreement is still active before using a service.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -67,70 +106,43 @@ export const TOOLS: MCPToolDefinition[] = [
     },
   },
   {
-    name: 'list_services',
-    description: 'List available service categories and known sellers.',
+    name: 'ophir_list_agreements',
+    description:
+      'Use when you need to see all available service categories and their known sellers. Returns a summary of service categories, seller counts, and price ranges. No parameters required. Call this to get an overview before discovering or negotiating.',
     inputSchema: {
       type: 'object',
       properties: {},
     },
   },
   {
-    name: 'ophir_discover',
+    name: 'ophir_dispute',
     description:
-      'Discover available service providers from the Ophir registry. Returns a list of sellers matching the criteria.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        category: {
-          type: 'string',
-          description: 'Service category to filter by (e.g. inference, translation)',
-        },
-        min_reputation: {
-          type: 'number',
-          description: 'Minimum reputation score (0-100) to filter sellers',
-        },
-      },
-    },
-  },
-  {
-    name: 'ophir_accept_quote',
-    description:
-      'Accept a specific quote from a previous negotiation, creating a signed agreement with the seller.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        rfq_id: {
-          type: 'string',
-          description: 'The RFQ ID from a previous negotiate_service call',
-        },
-        quote_id: {
-          type: 'string',
-          description: 'The specific quote ID to accept',
-        },
-      },
-      required: ['rfq_id', 'quote_id'],
-    },
-  },
-  {
-    name: 'ophir_monitor_sla',
-    description:
-      'Check SLA compliance for an active agreement. Returns current metric observations and compliance status.',
+      'Use when a service provider is not meeting SLA terms and you need to file a dispute or check compliance. Requires an active agreement ID. Returns current SLA metrics, targets, and compliance status. Use this to gather evidence before escalating.',
     inputSchema: {
       type: 'object',
       properties: {
         agreement_id: {
           type: 'string',
-          description: 'The agreement ID to monitor',
+          description: 'The agreement ID to check SLA compliance for',
         },
       },
       required: ['agreement_id'],
+    },
+  },
+  {
+    name: 'ophir_health',
+    description:
+      'Use to verify the Ophir MCP server is running and connected. Returns the server version, configured registry URL, number of known sellers, and connection status. Call this to diagnose connection issues or confirm the server is operational.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
     },
   },
 ];
 
 // ── Tool Handlers ─────────────────────────────────────────────────────
 
-/** Input parameters for the negotiate_service MCP tool. */
+/** Input parameters for the ophir_negotiate MCP tool. */
 export interface NegotiateServiceInput {
   service_category: string;
   requirements?: Record<string, unknown>;
@@ -138,7 +150,7 @@ export interface NegotiateServiceInput {
   currency?: string;
 }
 
-/** Input parameters for the check_agreement_status MCP tool. */
+/** Input parameters for the ophir_check_agreement MCP tool. */
 export interface CheckAgreementStatusInput {
   agreement_id: string;
 }
@@ -155,7 +167,7 @@ export interface AcceptQuoteInput {
   quote_id: string;
 }
 
-/** Input parameters for the ophir_monitor_sla MCP tool. */
+/** Input parameters for the ophir_dispute MCP tool. */
 export interface MonitorSLAInput {
   agreement_id: string;
 }
@@ -181,6 +193,17 @@ export interface OphirMCPServerConfig {
 /** Wrap a text string as an MCP tool result. */
 function textResult(text: string, isError = false): MCPToolResult {
   return { content: [{ type: 'text', text }], isError };
+}
+
+/** Validate that required string parameters are present and non-empty. */
+function validateRequired(args: Record<string, unknown>, fields: string[]): string | null {
+  for (const field of fields) {
+    const val = args[field];
+    if (val === undefined || val === null || (typeof val === 'string' && val.trim() === '')) {
+      return `Missing required parameter: ${field}`;
+    }
+  }
+  return null;
 }
 
 /** Send an RFQ, collect quotes, and return the best option. */
@@ -402,9 +425,6 @@ export async function handleAcceptQuote(
   const { negotiate } = await import('@ophirai/sdk');
   void negotiate; // unused — we need BuyerAgent directly
 
-  // Look up the RFQ session via stored agreements or return an error
-  // Since we don't persist full sessions across calls, we return an informational error
-  // directing users to use negotiate_service with the full flow
   return textResult(
     JSON.stringify(
       {
@@ -412,7 +432,7 @@ export async function handleAcceptQuote(
         rfq_id: input.rfq_id,
         quote_id: input.quote_id,
         message:
-          'Quote acceptance requires a persistent session. Use negotiate_service which auto-accepts the best quote, or use the @ophirai/sdk directly for multi-step negotiation flows.',
+          'Quote acceptance requires a persistent session. Use ophir_negotiate which auto-accepts the best quote, or use the @ophirai/sdk directly for multi-step negotiation flows.',
       },
       null,
       2,
@@ -469,6 +489,25 @@ export async function handleMonitorSLA(
   );
 }
 
+/** Return server health and connection status. */
+export function handleHealth(
+  config: OphirMCPServerConfig,
+): MCPToolResult {
+  return textResult(
+    JSON.stringify(
+      {
+        status: 'ok',
+        version: VERSION,
+        registry_url: config.registryUrl ?? null,
+        known_sellers: config.sellers.length,
+        active_agreements: config.agreements?.size ?? 0,
+      },
+      null,
+      2,
+    ),
+  );
+}
+
 // ── JSON-RPC MCP Server ───────────────────────────────────────────────
 
 function rpcResult(id: string | number | null, result: unknown): JsonRpcResponse {
@@ -491,6 +530,7 @@ function rpcError(
  */
 export class OphirMCPServer {
   private config: OphirMCPServerConfig;
+  private transport: StdioTransport | null = null;
 
   constructor(config?: Partial<OphirMCPServerConfig>) {
     const sellers: SellerInfo[] = [];
@@ -522,7 +562,7 @@ export class OphirMCPServer {
         return rpcResult(req.id ?? null, {
           protocolVersion: '2024-11-05',
           capabilities: { tools: {} },
-          serverInfo: { name: '@ophirai/mcp-server', version: '0.2.0' },
+          serverInfo: { name: '@ophirai/mcp-server', version: VERSION },
         });
 
       case 'notifications/initialized':
@@ -548,11 +588,19 @@ export class OphirMCPServer {
     // Auto-discover sellers from the registry on startup
     await this.autoDiscoverSellers();
 
-    const transport = new StdioTransport((req) => this.handleRequest(req));
-    transport.start();
+    this.transport = new StdioTransport((req) => this.handleRequest(req));
+    this.transport.start();
+
+    // Graceful shutdown
+    const shutdown = () => {
+      process.stderr.write('[ophir-mcp] Shutting down...\n');
+      process.exit(0);
+    };
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
 
     process.stderr.write(
-      `[ophir-mcp] Server started. ${this.config.sellers.length} sellers known.\n`,
+      `[ophir-mcp] Server v${VERSION} started. ${this.config.sellers.length} sellers known.\n`,
     );
   }
 
@@ -588,33 +636,49 @@ export class OphirMCPServer {
   ): Promise<JsonRpcResponse> {
     try {
       let result: MCPToolResult;
+      let validationError: string | null;
 
       switch (name) {
-        case 'negotiate_service':
+        case 'ophir_negotiate':
+          validationError = validateRequired(args, ['service_category', 'max_budget']);
+          if (validationError) return rpcResult(id, textResult(validationError, true));
           result = await handleNegotiateService(args as unknown as NegotiateServiceInput, this.config);
           break;
 
-        case 'check_agreement_status':
+        case 'ophir_check_agreement':
+          validationError = validateRequired(args, ['agreement_id']);
+          if (validationError) return rpcResult(id, textResult(validationError, true));
           result = await handleCheckAgreementStatus(
             args as unknown as CheckAgreementStatusInput,
             this.config,
           );
           break;
 
-        case 'list_services':
+        case 'ophir_list_agreements':
           result = handleListServices(this.config);
           break;
 
         case 'ophir_discover':
+          if (args.min_reputation !== undefined && (typeof args.min_reputation !== 'number' || args.min_reputation < 0 || args.min_reputation > 100)) {
+            return rpcResult(id, textResult('Invalid min_reputation: must be a number between 0 and 100', true));
+          }
           result = await handleDiscover(args as unknown as DiscoverInput, this.config);
           break;
 
         case 'ophir_accept_quote':
+          validationError = validateRequired(args, ['rfq_id', 'quote_id']);
+          if (validationError) return rpcResult(id, textResult(validationError, true));
           result = await handleAcceptQuote(args as unknown as AcceptQuoteInput, this.config);
           break;
 
-        case 'ophir_monitor_sla':
+        case 'ophir_dispute':
+          validationError = validateRequired(args, ['agreement_id']);
+          if (validationError) return rpcResult(id, textResult(validationError, true));
           result = await handleMonitorSLA(args as unknown as MonitorSLAInput, this.config);
+          break;
+
+        case 'ophir_health':
+          result = handleHealth(this.config);
           break;
 
         default:

@@ -1,0 +1,42 @@
+name: ophir-negotiate
+display_name: "Ophir — AI Agent Negotiation"
+description: |
+  Negotiate with AI service providers to get the best price, SLA guarantees,
+  and automatic provider switching. Your agent discovers providers, compares
+  quotes, and signs agreements — all autonomously.
+
+  Tools:
+  - ophir_discover: Find available AI providers
+  - ophir_negotiate: Run full negotiation (discover → quote → accept)
+  - ophir_accept_quote: Accept a specific provider's quote
+  - ophir_check_agreement: Monitor active agreement SLA compliance
+  - ophir_list_agreements: View all active agreements
+  - ophir_dispute: File a dispute for SLA violations
+
+  No API keys needed — connects to the public Ophir registry.
+version: "0.1.0"
+author: "Ophir Protocol"
+license: "MIT"
+repository: "https://github.com/ophirai/ophir"
+homepage: "https://ophir.ai"
+categories:
+  - "ai"
+  - "negotiation"
+  - "infrastructure"
+  - "cost-optimization"
+tags:
+  - "inference"
+  - "llm"
+  - "provider"
+  - "sla"
+  - "negotiation"
+  - "multi-provider"
+install:
+  type: "npx"
+  command: "npx @ophirai/mcp-server"
+config:
+  registry_url:
+    type: "string"
+    description: "Ophir registry URL"
+    default: "https://registry.ophir.ai/v1"
+    required: false

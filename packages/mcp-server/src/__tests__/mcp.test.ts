@@ -5,7 +5,9 @@ import {
   handleListServices,
   handleCheckAgreementStatus,
   handleNegotiateService,
+  handleHealth,
 } from '../index.js';
+import { VERSION } from '../version.js';
 import { StdioTransport } from '../stdio.js';
 import type { JsonRpcRequest, JsonRpcResponse } from '../stdio.js';
 
@@ -51,11 +53,11 @@ describe('MCP Protocol', () => {
     expect(res!.id).toBe(1);
     const result = res!.result as Record<string, unknown>;
     expect(result.protocolVersion).toBe('2024-11-05');
-    expect(result.serverInfo).toEqual({ name: '@ophirai/mcp-server', version: '0.2.0' });
+    expect(result.serverInfo).toEqual({ name: '@ophirai/mcp-server', version: VERSION });
     expect(result.capabilities).toEqual({ tools: {} });
   });
 
-  it('tools/list returns all 6 tools with valid schemas', async () => {
+  it('tools/list returns all 7 tools with valid schemas', async () => {
     const res = await server.handleRequest({
       jsonrpc: '2.0',
       id: 2,
@@ -64,19 +66,22 @@ describe('MCP Protocol', () => {
 
     expect(res).not.toBeNull();
     const result = res!.result as { tools: typeof TOOLS };
-    expect(result.tools).toHaveLength(6);
+    expect(result.tools).toHaveLength(7);
 
     const names = result.tools.map((t) => t.name);
-    expect(names).toContain('negotiate_service');
-    expect(names).toContain('check_agreement_status');
-    expect(names).toContain('list_services');
+    expect(names).toContain('ophir_negotiate');
+    expect(names).toContain('ophir_check_agreement');
+    expect(names).toContain('ophir_list_agreements');
     expect(names).toContain('ophir_discover');
     expect(names).toContain('ophir_accept_quote');
-    expect(names).toContain('ophir_monitor_sla');
+    expect(names).toContain('ophir_dispute');
+    expect(names).toContain('ophir_health');
 
     for (const tool of result.tools) {
       expect(tool.inputSchema.type).toBe('object');
       expect(tool.description).toBeTruthy();
+      // All descriptions should start with "Use when" or "Use to"
+      expect(tool.description).toMatch(/^Use (when|to) /);
     }
   });
 
@@ -120,14 +125,14 @@ describe('MCP Protocol', () => {
 // ── Tool Tests ──────────────────────────────────────────────────────
 
 describe('Tool Handlers', () => {
-  it('negotiate_service with no matching sellers returns error', async () => {
+  it('ophir_negotiate with no matching sellers returns error', async () => {
     const server = new OphirMCPServer({ sellers: [] });
     const res = await server.handleRequest({
       jsonrpc: '2.0',
       id: 10,
       method: 'tools/call',
       params: {
-        name: 'negotiate_service',
+        name: 'ophir_negotiate',
         arguments: { service_category: 'inference', max_budget: '0.01' },
       },
     });
@@ -137,7 +142,7 @@ describe('Tool Handlers', () => {
     expect(result.content[0].text).toContain('No sellers found');
   });
 
-  it('negotiate_service with known sellers returns best quote', async () => {
+  it('ophir_negotiate with known sellers returns best quote', async () => {
     mockRequestQuotes.mockResolvedValue({ rfqId: 'rfq-test-1' });
     mockWaitForQuotes.mockResolvedValue([
       {
@@ -179,7 +184,7 @@ describe('Tool Handlers', () => {
     expect(mockClose).toHaveBeenCalled();
   });
 
-  it('list_services returns service categories', async () => {
+  it('ophir_list_agreements returns service categories', async () => {
     const server = new OphirMCPServer({
       sellers: [
         {
@@ -197,7 +202,7 @@ describe('Tool Handlers', () => {
       jsonrpc: '2.0',
       id: 12,
       method: 'tools/call',
-      params: { name: 'list_services', arguments: {} },
+      params: { name: 'ophir_list_agreements', arguments: {} },
     });
 
     const result = res!.result as { content: { type: string; text: string }[] };
@@ -207,14 +212,14 @@ describe('Tool Handlers', () => {
     expect(parsed.services.map((s: { category: string }) => s.category)).toContain('translation');
   });
 
-  it('check_agreement_status with unknown ID returns error', async () => {
+  it('ophir_check_agreement with unknown ID returns error', async () => {
     const server = new OphirMCPServer({ sellers: [] });
     const res = await server.handleRequest({
       jsonrpc: '2.0',
       id: 13,
       method: 'tools/call',
       params: {
-        name: 'check_agreement_status',
+        name: 'ophir_check_agreement',
         arguments: { agreement_id: 'nonexistent-id' },
       },
     });
@@ -252,14 +257,14 @@ describe('Tool Handlers', () => {
     expect(parsed.total).toBe(1);
   });
 
-  it('ophir_monitor_sla with unknown agreement returns error', async () => {
+  it('ophir_dispute with unknown agreement returns error', async () => {
     const server = new OphirMCPServer({ sellers: [] });
     const res = await server.handleRequest({
       jsonrpc: '2.0',
       id: 14,
       method: 'tools/call',
       params: {
-        name: 'ophir_monitor_sla',
+        name: 'ophir_dispute',
         arguments: { agreement_id: 'unknown-agreement' },
       },
     });
@@ -269,7 +274,7 @@ describe('Tool Handlers', () => {
     expect(result.content[0].text).toContain('No agreement found');
   });
 
-  it('ophir_accept_quote returns not-implemented or error status', async () => {
+  it('ophir_accept_quote returns not-implemented status', async () => {
     const server = new OphirMCPServer({ sellers: [] });
     const res = await server.handleRequest({
       jsonrpc: '2.0',
@@ -283,9 +288,145 @@ describe('Tool Handlers', () => {
 
     const result = res!.result as { content: { type: string; text: string }[]; isError?: boolean };
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toBeTruthy();
-    // May return not_implemented_yet JSON or a tool error string
     expect(result.content[0].type).toBe('text');
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.status).toBe('not_implemented_yet');
+  });
+});
+
+// ── Health Tool Tests ───────────────────────────────────────────────
+
+describe('ophir_health', () => {
+  it('returns server version and status', async () => {
+    const server = new OphirMCPServer({ sellers: [] });
+    const res = await server.handleRequest({
+      jsonrpc: '2.0',
+      id: 30,
+      method: 'tools/call',
+      params: { name: 'ophir_health', arguments: {} },
+    });
+
+    const result = res!.result as { content: { type: string; text: string }[]; isError?: boolean };
+    expect(result.isError).toBeFalsy();
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.status).toBe('ok');
+    expect(parsed.version).toBe(VERSION);
+    expect(parsed.known_sellers).toBe(0);
+    expect(parsed.active_agreements).toBe(0);
+  });
+
+  it('reflects correct seller count', () => {
+    const config = {
+      sellers: [
+        { agentId: 's1', endpoint: 'http://s1', services: [] },
+        { agentId: 's2', endpoint: 'http://s2', services: [] },
+      ],
+      agreements: new Map(),
+    };
+    const result = handleHealth(config);
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.known_sellers).toBe(2);
+  });
+});
+
+// ── Input Validation Tests ──────────────────────────────────────────
+
+describe('Input Validation', () => {
+  let server: OphirMCPServer;
+
+  beforeEach(() => {
+    server = new OphirMCPServer({ sellers: [] });
+  });
+
+  it('ophir_negotiate rejects missing service_category', async () => {
+    const res = await server.handleRequest({
+      jsonrpc: '2.0',
+      id: 40,
+      method: 'tools/call',
+      params: { name: 'ophir_negotiate', arguments: { max_budget: '0.01' } },
+    });
+
+    const result = res!.result as { content: { type: string; text: string }[]; isError?: boolean };
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Missing required parameter: service_category');
+  });
+
+  it('ophir_negotiate rejects missing max_budget', async () => {
+    const res = await server.handleRequest({
+      jsonrpc: '2.0',
+      id: 41,
+      method: 'tools/call',
+      params: { name: 'ophir_negotiate', arguments: { service_category: 'inference' } },
+    });
+
+    const result = res!.result as { content: { type: string; text: string }[]; isError?: boolean };
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Missing required parameter: max_budget');
+  });
+
+  it('ophir_check_agreement rejects missing agreement_id', async () => {
+    const res = await server.handleRequest({
+      jsonrpc: '2.0',
+      id: 42,
+      method: 'tools/call',
+      params: { name: 'ophir_check_agreement', arguments: {} },
+    });
+
+    const result = res!.result as { content: { type: string; text: string }[]; isError?: boolean };
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Missing required parameter: agreement_id');
+  });
+
+  it('ophir_accept_quote rejects missing rfq_id', async () => {
+    const res = await server.handleRequest({
+      jsonrpc: '2.0',
+      id: 43,
+      method: 'tools/call',
+      params: { name: 'ophir_accept_quote', arguments: { quote_id: 'q1' } },
+    });
+
+    const result = res!.result as { content: { type: string; text: string }[]; isError?: boolean };
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Missing required parameter: rfq_id');
+  });
+
+  it('ophir_dispute rejects missing agreement_id', async () => {
+    const res = await server.handleRequest({
+      jsonrpc: '2.0',
+      id: 44,
+      method: 'tools/call',
+      params: { name: 'ophir_dispute', arguments: {} },
+    });
+
+    const result = res!.result as { content: { type: string; text: string }[]; isError?: boolean };
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Missing required parameter: agreement_id');
+  });
+
+  it('ophir_discover rejects invalid min_reputation', async () => {
+    const res = await server.handleRequest({
+      jsonrpc: '2.0',
+      id: 45,
+      method: 'tools/call',
+      params: { name: 'ophir_discover', arguments: { min_reputation: 150 } },
+    });
+
+    const result = res!.result as { content: { type: string; text: string }[]; isError?: boolean };
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Invalid min_reputation');
+  });
+
+  it('ophir_negotiate rejects empty string service_category', async () => {
+    const res = await server.handleRequest({
+      jsonrpc: '2.0',
+      id: 46,
+      method: 'tools/call',
+      params: { name: 'ophir_negotiate', arguments: { service_category: '  ', max_budget: '0.01' } },
+    });
+
+    const result = res!.result as { content: { type: string; text: string }[]; isError?: boolean };
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Missing required parameter: service_category');
   });
 });
 
@@ -293,7 +434,6 @@ describe('Tool Handlers', () => {
 
 describe('StdioTransport', () => {
   it('buffers partial messages until newline', async () => {
-    const responses: JsonRpcResponse[] = [];
     const handler = vi.fn().mockResolvedValue({
       jsonrpc: '2.0' as const,
       id: 1,
@@ -301,18 +441,12 @@ describe('StdioTransport', () => {
     });
 
     const transport = new StdioTransport(handler);
-
-    // Access the private onData method via type assertion
     const onData = (transport as unknown as { onData(chunk: string): Promise<void> }).onData.bind(transport);
-
-    // Capture stdout writes
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
 
-    // Send partial message (no newline yet)
     await onData('{"jsonrpc":"2.0","id":1,');
     expect(handler).not.toHaveBeenCalled();
 
-    // Complete the message with newline
     await onData('"method":"initialize"}\n');
     expect(handler).toHaveBeenCalledOnce();
     expect(handler).toHaveBeenCalledWith(
@@ -331,7 +465,6 @@ describe('StdioTransport', () => {
 
     const transport = new StdioTransport(handler);
     const onData = (transport as unknown as { onData(chunk: string): Promise<void> }).onData.bind(transport);
-
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
 
     const msg1 = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' });
@@ -348,7 +481,6 @@ describe('StdioTransport', () => {
 
     const transport = new StdioTransport(handler);
     const onData = (transport as unknown as { onData(chunk: string): Promise<void> }).onData.bind(transport);
-
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
 
     await onData('not valid json\n');
@@ -373,7 +505,6 @@ describe('StdioTransport', () => {
 
     const transport = new StdioTransport(handler);
     const onData = (transport as unknown as { onData(chunk: string): Promise<void> }).onData.bind(transport);
-
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
 
     await onData('\n\n' + JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' }) + '\n\n');
