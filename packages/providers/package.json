@@ -1,0 +1,25 @@
+{
+  "name": "@ophirai/providers",
+  "version": "0.2.0",
+  "description": "AI inference provider wrappers for Ophir — turn any API into a negotiable seller",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/ophirai/ophir", "directory": "packages/providers" },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "lint": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "files": ["dist", "README.md"],
+  "dependencies": {
+    "@ophirai/protocol": "*",
+    "@ophirai/sdk": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}
