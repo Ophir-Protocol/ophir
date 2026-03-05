@@ -147,6 +147,13 @@ export class NegotiationServer {
     return this.boundPort;
   }
 
+  /** Get the underlying Express app instance for attaching additional routes.
+   * @returns The Express application
+   */
+  getApp(): Express {
+    return this.app;
+  }
+
   /** Stop the server and close all connections.
    * @returns Resolves when the server has fully shut down
    * @throws {Error} When the underlying HTTP server fails to close

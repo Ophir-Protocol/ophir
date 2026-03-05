@@ -150,6 +150,17 @@ export type {
   RegistryQuery,
 } from './registry.js';
 
+// ── High-level negotiate ───────────────────────────────────────────
+/** One-call negotiation: discover sellers, collect quotes, rank, and optionally accept. */
+export { negotiate } from './negotiate.js';
+export type { NegotiateOptions, NegotiateResult } from './negotiate.js';
+
+// ── Well-known endpoints ───────────────────────────────────────────
+/** Attach /.well-known/agent.json and /.well-known/ophir.json routes to an Express app. */
+export { attachWellKnown } from './wellknown.js';
+/** Configuration for well-known endpoint responses. */
+export type { WellKnownConfig } from './wellknown.js';
+
 // ── x402 payment headers ───────────────────────────────────────────
 /** Convert agreements to x402 HTTP payment headers and parse responses. */
 export { agreementToX402Headers, parseX402Response } from './x402.js';

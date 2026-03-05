@@ -24,6 +24,7 @@ import { NegotiationSession } from './negotiation.js';
 import { JsonRpcClient } from './transport.js';
 import type { ServiceOffering, PricingStrategy, Agreement } from './types.js';
 import type { AgentCard } from './discovery.js';
+import { attachWellKnown } from './wellknown.js';
 
 /** Configuration for creating a SellerAgent. */
 export interface SellerAgentConfig {
@@ -68,6 +69,7 @@ export class SellerAgent {
 
     this.server = new NegotiationServer();
     this.registerHandlers();
+    attachWellKnown(this.server.getApp(), this.generateAgentCard());
   }
 
   /** Check if a message ID has already been processed (replay protection).
