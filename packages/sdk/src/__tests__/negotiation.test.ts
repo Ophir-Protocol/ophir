@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { NegotiationSession } from '../negotiation.js';
-import { OphirErrorCode, OphirError } from '@ophir/protocol';
-import type { RFQParams, QuoteParams, CounterParams } from '@ophir/protocol';
+import { OphirErrorCode, OphirError } from '@ophirai/protocol';
+import type { RFQParams, QuoteParams, CounterParams } from '@ophirai/protocol';
 import type { Agreement } from '../types.js';
 
 function makeRFQ(overrides?: Partial<RFQParams>): RFQParams {

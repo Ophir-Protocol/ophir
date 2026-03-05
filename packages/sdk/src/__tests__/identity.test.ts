@@ -6,7 +6,7 @@ import {
   didToPublicKey,
   generateAgentIdentity,
 } from '../identity.js';
-import { OphirError, OphirErrorCode } from '@ophir/protocol';
+import { OphirError, OphirErrorCode } from '@ophirai/protocol';
 
 describe('generateKeyPair', () => {
   it('returns publicKey of 32 bytes', () => {

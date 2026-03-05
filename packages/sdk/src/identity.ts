@@ -1,6 +1,6 @@
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
-import { OphirError, OphirErrorCode } from '@ophir/protocol';
+import { OphirError, OphirErrorCode } from '@ophirai/protocol';
 
 /** Multicodec prefix for Ed25519 public key (varint-encoded 0xed) */
 const ED25519_MULTICODEC_PREFIX = new Uint8Array([0xed, 0x01]);

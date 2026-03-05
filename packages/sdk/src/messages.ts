@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { METHODS, DEFAULT_CONFIG, OphirError, OphirErrorCode } from '@ophir/protocol';
+import { METHODS, DEFAULT_CONFIG, OphirError, OphirErrorCode } from '@ophirai/protocol';
 import type {
   AgentIdentity,
   ServiceRequirement,
@@ -18,7 +18,7 @@ import type {
   AcceptParams,
   RejectParams,
   DisputeParams,
-} from '@ophir/protocol';
+} from '@ophirai/protocol';
 import { signMessage, agreementHash } from './signing.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

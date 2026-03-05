@@ -8,7 +8,7 @@ import {
   DEFAULT_CONFIG,
   OphirError,
   OphirErrorCode,
-} from '@ophir/protocol';
+} from '@ophirai/protocol';
 import type {
   RFQParams,
   QuoteParams,
@@ -16,7 +16,7 @@ import type {
   AcceptParams,
   RejectParams,
   SLARequirement,
-} from '@ophir/protocol';
+} from '@ophirai/protocol';
 import { generateKeyPair, publicKeyToDid, didToPublicKey } from './identity.js';
 import { signMessage, verifyMessage, agreementHash } from './signing.js';
 import { NegotiationServer } from './server.js';

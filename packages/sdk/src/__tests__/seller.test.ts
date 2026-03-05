@@ -3,7 +3,7 @@ import { SellerAgent } from '../seller.js';
 import type { ServiceOffering } from '../types.js';
 import { verifyMessage, signMessage, agreementHash } from '../signing.js';
 import { generateKeyPair, publicKeyToDid, didToPublicKey } from '../identity.js';
-import type { RFQParams, QuoteParams } from '@ophir/protocol';
+import type { RFQParams, QuoteParams } from '@ophirai/protocol';
 import type { AgentCard } from '../discovery.js';
 
 const TEST_SERVICES: ServiceOffering[] = [

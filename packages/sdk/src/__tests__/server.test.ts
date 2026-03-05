@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { NegotiationServer } from '../server.js';
-import { OphirError, OphirErrorCode } from '@ophir/protocol';
+import { OphirError, OphirErrorCode } from '@ophirai/protocol';
 
 function jsonrpcRequest(url: string, body: Record<string, unknown>) {
   return fetch(url, {

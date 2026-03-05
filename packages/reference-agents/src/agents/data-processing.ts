@@ -1,8 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
-import { DEFAULT_CONFIG } from '@ophir/protocol';
-import type { RFQParams, QuoteParams, SLARequirement } from '@ophir/protocol';
-import { SellerAgent, signMessage, generateKeyPair } from '@ophir/sdk';
-import type { SellerAgentConfig } from '@ophir/sdk';
+import { DEFAULT_CONFIG } from '@ophirai/protocol';
+import type { RFQParams, QuoteParams, SLARequirement } from '@ophirai/protocol';
+import { SellerAgent, signMessage, generateKeyPair } from '@ophirai/sdk';
+import type { SellerAgentConfig } from '@ophirai/sdk';
 
 const SERVICE = {
   category: 'data_processing',

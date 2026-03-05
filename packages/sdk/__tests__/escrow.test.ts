@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { PublicKey, Keypair } from '@solana/web3.js';
 import { EscrowManager } from '../src/escrow.js';
-import { OphirError } from '@ophir/protocol';
+import { OphirError } from '@ophirai/protocol';
 
 const DEFAULT_PROGRAM_ID = 'CHwqh23SpWSM6WLsd15iQcP4KSkB351S9eGcN4fQSVqy';
 

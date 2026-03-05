@@ -6,7 +6,7 @@ import {
   slaToLockstepSpec,
 } from '../sla.js';
 import type { LockstepVerificationSpec } from '../sla.js';
-import type { SLARequirement } from '@ophir/protocol';
+import type { SLARequirement } from '@ophirai/protocol';
 
 describe('SLA_TEMPLATES', () => {
   it('inference_realtime returns valid structure', () => {

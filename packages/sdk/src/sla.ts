@@ -1,5 +1,5 @@
-import type { SLARequirement, SLAMetric } from '@ophir/protocol';
-import { OphirError, OphirErrorCode } from '@ophir/protocol';
+import type { SLARequirement, SLAMetric } from '@ophirai/protocol';
+import { OphirError, OphirErrorCode } from '@ophirai/protocol';
 
 /** Pre-built SLA templates for common AI service categories. */
 export const SLA_TEMPLATES = {

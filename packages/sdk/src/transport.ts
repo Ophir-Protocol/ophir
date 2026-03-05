@@ -1,4 +1,4 @@
-import { OphirError, OphirErrorCode } from '@ophir/protocol';
+import { OphirError, OphirErrorCode } from '@ophirai/protocol';
 
 /** Configuration options for the JSON-RPC HTTP client. */
 export interface JsonRpcClientConfig {

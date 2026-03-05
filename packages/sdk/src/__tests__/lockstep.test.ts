@@ -5,7 +5,7 @@ import {
 } from '../lockstep.js';
 import type { LockstepSpec } from '../lockstep.js';
 import type { Agreement } from '../types.js';
-import type { SLAMetric } from '@ophir/protocol';
+import type { SLAMetric } from '@ophirai/protocol';
 
 function makeAgreement(overrides: Partial<Agreement> = {}): Agreement {
   return {

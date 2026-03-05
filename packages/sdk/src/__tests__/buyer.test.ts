@@ -4,7 +4,7 @@ import { generateKeyPair, publicKeyToDid, didToPublicKey } from '../identity.js'
 import { signMessage, verifyMessage, agreementHash } from '../signing.js';
 import { buildCounter } from '../messages.js';
 import { NegotiationSession } from '../negotiation.js';
-import type { QuoteParams, CounterParams, RFQParams } from '@ophir/protocol';
+import type { QuoteParams, CounterParams, RFQParams } from '@ophirai/protocol';
 
 /** Create a valid signed RFQ for constructing NegotiationSession directly. */
 function makeRFQ(overrides?: Partial<RFQParams>): RFQParams {

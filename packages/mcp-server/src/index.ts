@@ -1,6 +1,6 @@
-/** @module @ophir/mcp-server — MCP tool wrapper for Ophir negotiation protocol */
-import type { SellerInfo, Agreement } from '@ophir/sdk';
-import type { SLAMetric } from '@ophir/protocol';
+/** @module @ophirai/mcp-server — MCP tool wrapper for Ophir negotiation protocol */
+import type { SellerInfo, Agreement } from '@ophirai/sdk';
+import type { SLAMetric } from '@ophirai/protocol';
 
 // ── MCP Tool Definitions ─────────────────────────────────────────────
 
@@ -115,7 +115,7 @@ export async function handleNegotiateService(
   input: NegotiateServiceInput,
   config: OphirMCPServerConfig,
 ): Promise<MCPToolResult> {
-  const { BuyerAgent } = await import('@ophir/sdk');
+  const { BuyerAgent } = await import('@ophirai/sdk');
 
   const matchingSellers = config.sellers.filter((s) =>
     s.services.some((svc) => svc.category === input.service_category),
@@ -307,7 +307,7 @@ export class OphirMCPServer {
         return rpcResult(req.id, {
           protocolVersion: '2024-11-05',
           capabilities: { tools: {} },
-          serverInfo: { name: '@ophir/mcp-server', version: '0.1.0' },
+          serverInfo: { name: '@ophirai/mcp-server', version: '0.1.0' },
         });
 
       default:

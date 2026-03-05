@@ -1,5 +1,5 @@
 /**
- * @module @ophir/reference-agents
+ * @module @ophirai/reference-agents
  *
  * Five pre-configured seller agents for testing Ophir negotiations.
  * Each agent specializes in a different service category with

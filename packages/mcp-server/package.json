@@ -1,18 +1,27 @@
 {
-  "name": "@ophir/mcp-server",
-  "version": "0.1.0",
+  "name": "@ophirai/mcp-server",
+  "version": "0.2.0",
+  "description": "MCP tool server exposing Ophir agent negotiation as Model Context Protocol tools for LLM-powered agents",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ophirai/ophir",
+    "directory": "packages/mcp-server"
+  },
+  "keywords": ["mcp", "model-context-protocol", "ai-agents", "negotiation", "ophir", "llm-tools"],
   "scripts": {
     "build": "tsc",
     "test": "vitest run --passWithNoTests",
     "lint": "tsc --noEmit",
     "clean": "rm -rf dist"
   },
+  "files": ["dist", "README.md"],
   "dependencies": {
-    "@ophir/sdk": "*",
-    "@ophir/protocol": "*"
+    "@ophirai/sdk": "*",
+    "@ophirai/protocol": "*"
   },
   "devDependencies": {
     "typescript": "^5.5.0",

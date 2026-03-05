@@ -1,8 +1,8 @@
 import nacl from 'tweetnacl';
 import stringify from 'json-stable-stringify';
 import { createHash } from 'node:crypto';
-import { OphirError, OphirErrorCode } from '@ophir/protocol';
-import type { FinalTerms } from '@ophir/protocol';
+import { OphirError, OphirErrorCode } from '@ophirai/protocol';
+import type { FinalTerms } from '@ophirai/protocol';
 
 /**
  * JCS (RFC 8785) canonicalization using json-stable-stringify.

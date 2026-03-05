@@ -3,8 +3,8 @@ import type {
   RFQParams,
   QuoteParams,
   CounterParams,
-} from '@ophir/protocol';
-import { OphirError, OphirErrorCode, DEFAULT_CONFIG, isValidTransition, isTerminalState, getValidNextStates } from '@ophir/protocol';
+} from '@ophirai/protocol';
+import { OphirError, OphirErrorCode, DEFAULT_CONFIG, isValidTransition, isTerminalState, getValidNextStates } from '@ophirai/protocol';
 import type { Agreement } from './types.js';
 
 const DEFAULT_TIMEOUTS: Partial<Record<NegotiationState, number>> = {
@@ -17,7 +17,7 @@ const DEFAULT_TIMEOUTS: Partial<Record<NegotiationState, number>> = {
  * Tracks the state of a single negotiation from RFQ through completion or rejection.
  *
  * All state transitions are validated against the protocol's canonical state machine
- * defined in `@ophir/protocol` using `isValidTransition()`. Invalid transitions
+ * defined in `@ophirai/protocol` using `isValidTransition()`. Invalid transitions
  * throw `OphirError` with code `INVALID_STATE_TRANSITION`.
  */
 export class NegotiationSession {
@@ -219,7 +219,7 @@ export class NegotiationSession {
 
   /**
    * Validate a state transition against the protocol's canonical state machine.
-   * Uses `isValidTransition()` from `@ophir/protocol` as the single source of truth.
+   * Uses `isValidTransition()` from `@ophirai/protocol` as the single source of truth.
    *
    * @param targetState - The state to transition to
    * @param action - The action name for error messages

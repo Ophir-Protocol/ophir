@@ -6,7 +6,7 @@ import {
   DEFAULT_CONFIG,
   OphirError,
   OphirErrorCode,
-} from '@ophir/protocol';
+} from '@ophirai/protocol';
 import type {
   RFQParams,
   QuoteParams,
@@ -16,13 +16,14 @@ import type {
   SLARequirement,
   FinalTerms,
   ViolationEvidence,
-} from '@ophir/protocol';
+} from '@ophirai/protocol';
 import { generateKeyPair, publicKeyToDid, didToPublicKey } from './identity.js';
 import { signMessage, verifyMessage, agreementHash } from './signing.js';
 import { NegotiationServer } from './server.js';
 import { NegotiationSession } from './negotiation.js';
 import { JsonRpcClient } from './transport.js';
 import { buildRFQ, buildCounter, buildAccept, buildReject, buildDispute } from './messages.js';
+import { autoDiscover } from './registry.js';
 import type { EscrowConfig, RankingFunction, SellerInfo, Agreement, DisputeResult } from './types.js';
 
 /** Configuration for creating a BuyerAgent. */
@@ -35,6 +36,10 @@ export interface BuyerAgentConfig {
   escrowConfig?: EscrowConfig;
   /** Optional Lockstep verification endpoint for SLA compliance monitoring. */
   lockstepEndpoint?: string;
+  /** Optional registry endpoints for agent discovery. */
+  registryEndpoints?: string[];
+  /** Optional fallback endpoints for A2A discovery when registry is unavailable. */
+  fallbackEndpoints?: string[];
 }
 
 /**
@@ -52,11 +57,15 @@ export class BuyerAgent {
   private quoteListeners = new Map<string, Array<() => void>>();
   /** Tracks processed message IDs within the replay window to reject duplicate/replayed messages. */
   private seenMessageIds = new Map<string, number>();
+  private registryEndpoints?: string[];
+  private fallbackEndpoints?: string[];
 
   constructor(config: BuyerAgentConfig) {
     this.keypair = config.keypair ?? generateKeyPair();
     this.agentId = publicKeyToDid(this.keypair.publicKey);
     this.endpoint = config.endpoint;
+    this.registryEndpoints = config.registryEndpoints;
+    this.fallbackEndpoints = config.fallbackEndpoints;
     this.transport = new JsonRpcClient();
     this.server = new NegotiationServer();
     this.registerHandlers();
@@ -233,11 +242,19 @@ export class BuyerAgent {
    * const sellers = await buyer.discover({ category: 'llm-inference' });
    * ```
    */
-  async discover(_query: {
+  async discover(query: {
     category: string;
     requirements?: Record<string, unknown>;
   }): Promise<SellerInfo[]> {
-    return [];
+    const agents = await autoDiscover(query.category, {
+      registries: this.registryEndpoints,
+      fallbackEndpoints: this.fallbackEndpoints,
+    });
+    return agents.map((a) => ({
+      agentId: a.agentId,
+      endpoint: a.endpoint,
+      services: a.services,
+    }));
   }
 
   /** Send an RFQ to one or more sellers and return the negotiation session.

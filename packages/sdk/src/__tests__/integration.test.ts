@@ -4,7 +4,7 @@ import { SellerAgent } from '../seller.js';
 import { generateKeyPair, didToPublicKey } from '../identity.js';
 import { signMessage, verifyMessage, agreementHash } from '../signing.js';
 import { buildQuote } from '../messages.js';
-import { OphirError, OphirErrorCode } from '@ophir/protocol';
+import { OphirError, OphirErrorCode } from '@ophirai/protocol';
 
 describe('Integration: Full negotiation flows', () => {
   describe('Test 1: Happy path — RFQ → Quote → Accept', () => {

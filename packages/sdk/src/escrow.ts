@@ -9,7 +9,7 @@ import {
   sendAndConfirmTransaction,
 } from '@solana/web3.js';
 import { createHash } from 'node:crypto';
-import { OphirError, OphirErrorCode, DEFAULT_CONFIG, ESCROW_PROGRAM_ID } from '@ophir/protocol';
+import { OphirError, OphirErrorCode, DEFAULT_CONFIG, ESCROW_PROGRAM_ID } from '@ophirai/protocol';
 import type { Agreement } from './types.js';
 
 const DEFAULT_RPC_URL = DEFAULT_CONFIG.solana_rpc;

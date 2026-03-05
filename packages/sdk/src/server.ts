@@ -1,7 +1,7 @@
 import express from 'express';
 import type { Express } from 'express';
 import type { Server } from 'node:http';
-import { OphirError } from '@ophir/protocol';
+import { OphirError } from '@ophirai/protocol';
 
 /**
  * Express-based JSON-RPC 2.0 server for receiving Ophir negotiation messages.

@@ -1,4 +1,4 @@
-import type { SLAMetric } from '@ophir/protocol';
+import type { SLAMetric } from '@ophirai/protocol';
 import type { Agreement, DisputeResult } from './types.js';
 
 const DEFAULT_LOCKSTEP_ENDPOINT = 'https://api.lockstep.dev/v1';

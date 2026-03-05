@@ -1,4 +1,4 @@
-import type { PaymentMethod } from '@ophir/protocol';
+import type { PaymentMethod } from '@ophirai/protocol';
 import type { SellerInfo, ServiceOffering } from './types.js';
 
 /** Negotiation capability advertised in an A2A Agent Card. */

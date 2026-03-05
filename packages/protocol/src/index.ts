@@ -1,5 +1,5 @@
 /**
- * @module @ophir/protocol
+ * @module @ophirai/protocol
  *
  * Core protocol definitions for the Ophir Agent Negotiation Protocol.
  * Exports TypeScript interfaces, Zod validation schemas, error types,

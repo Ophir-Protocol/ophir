@@ -10,7 +10,7 @@ import {
 } from '../messages.js';
 import { verifyMessage, agreementHash, signMessage } from '../signing.js';
 import { publicKeyToDid } from '../identity.js';
-import type { AgentIdentity, FinalTerms } from '@ophir/protocol';
+import type { AgentIdentity, FinalTerms } from '@ophirai/protocol';
 
 function makeIdentity(kp: nacl.SignKeyPair): AgentIdentity {
   return {
@@ -705,7 +705,7 @@ describe('message builder edge cases', () => {
 
   it('buildRFQ includes SLA in params', () => {
     const kp = nacl.sign.keyPair();
-    const sla: import('@ophir/protocol').SLARequirement = {
+    const sla: import('@ophirai/protocol').SLARequirement = {
       metrics: [
         { name: 'uptime_pct', target: 99.9, comparison: 'gte' },
         { name: 'p99_latency_ms', target: 200, comparison: 'lte' },

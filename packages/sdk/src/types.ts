@@ -1,4 +1,4 @@
-import type { QuoteParams, FinalTerms } from '@ophir/protocol';
+import type { QuoteParams, FinalTerms } from '@ophirai/protocol';
 
 /** Configuration for connecting to the Solana escrow program. */
 export interface EscrowConfig {

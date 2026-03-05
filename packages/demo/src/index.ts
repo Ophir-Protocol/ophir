@@ -6,9 +6,9 @@ import {
   EscrowManager,
   signMessage,
   generateKeyPair,
-} from '@ophir/sdk';
-import type { RFQParams, QuoteParams, SLARequirement } from '@ophir/protocol';
-import { DEFAULT_CONFIG } from '@ophir/protocol';
+} from '@ophirai/sdk';
+import type { RFQParams, QuoteParams, SLARequirement } from '@ophirai/protocol';
+import { DEFAULT_CONFIG } from '@ophirai/protocol';
 import { v4 as uuidv4 } from 'uuid';
 import { computeComparison, formatComparison } from './comparison.js';
 
@@ -236,7 +236,7 @@ async function main() {
 
     console.log(chalk.cyan.bold('  Buyer (15 lines):'));
     console.log(
-      chalk.dim(`  import { BuyerAgent } from '@ophir/sdk';
+      chalk.dim(`  import { BuyerAgent } from '@ophirai/sdk';
 
   const buyer = new BuyerAgent({ endpoint: 'http://localhost:3002' });
   await buyer.listen(3002);
@@ -257,7 +257,7 @@ async function main() {
 
     console.log(chalk.cyan.bold('  Seller (15 lines):'));
     console.log(
-      chalk.dim(`  import { SellerAgent } from '@ophir/sdk';
+      chalk.dim(`  import { SellerAgent } from '@ophirai/sdk';
 
   const seller = new SellerAgent({
     endpoint: 'http://localhost:3001',

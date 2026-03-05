@@ -6,7 +6,7 @@ import { createDataProcessingAgent } from './agents/data-processing.js';
 import { createCodeReviewAgent } from './agents/code-review.js';
 import { createTranslationAgent } from './agents/translation.js';
 import { createImageGenerationAgent } from './agents/image-generation.js';
-import type { SellerAgent } from '@ophir/sdk';
+import type { SellerAgent } from '@ophirai/sdk';
 
 const AGENT_TYPES = {
   'inference': { factory: createInferenceAgent, defaultPort: 3001 },

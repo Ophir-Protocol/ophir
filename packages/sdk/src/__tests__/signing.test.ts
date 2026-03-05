@@ -16,7 +16,7 @@ import {
   generateAgentIdentity,
 } from '../identity.js';
 import { buildRFQ, buildReject } from '../messages.js';
-import type { FinalTerms } from '@ophir/protocol';
+import type { FinalTerms } from '@ophirai/protocol';
 
 describe('canonicalize', () => {
   it('produces deterministic output regardless of key order', () => {

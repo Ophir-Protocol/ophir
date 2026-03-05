@@ -1,5 +1,5 @@
 /**
- * @module @ophir/sdk
+ * @module @ophirai/sdk
  *
  * SDK for the Ophir Agent Negotiation Protocol.
  * Provides BuyerAgent, SellerAgent, Ed25519 signing, JSON-RPC transport,
@@ -130,12 +130,32 @@ export type {
   ComplianceResult,
 } from './lockstep.js';
 
+// ── Metric collection & Lockstep monitoring ────────────────────────
+/** Collect metric observations and evaluate SLA compliance locally. */
+export { MetricCollector } from './metrics.js';
+export type {
+  /** A single metric observation recorded by the buyer. */
+  MetricSample,
+  /** A detected SLA violation with evidence. */
+  Violation,
+} from './metrics.js';
+
+// ── Agent registry & auto-discovery ────────────────────────────────
+/** Client for the Ophir Agent Registry and autonomous agent discovery. */
+export { OphirRegistry, autoDiscover, BOOTSTRAP_REGISTRIES } from './registry.js';
+export type {
+  /** A registered agent in the Ophir registry. */
+  RegisteredAgent,
+  /** Query parameters for finding agents in the registry. */
+  RegistryQuery,
+} from './registry.js';
+
 // ── x402 payment headers ───────────────────────────────────────────
 /** Convert agreements to x402 HTTP payment headers and parse responses. */
 export { agreementToX402Headers, parseX402Response } from './x402.js';
 
 // ── Re-export protocol types for convenience ────────────────────────
-/** All protocol-level types re-exported from @ophir/protocol for convenience. */
+/** All protocol-level types re-exported from @ophirai/protocol for convenience. */
 export type {
   /** Agent identity with did:key identifier and HTTP endpoint. */
   AgentIdentity,
@@ -177,4 +197,4 @@ export type {
   JsonRpcRequest,
   /** JSON-RPC 2.0 response envelope with typed result. */
   JsonRpcResponse,
-} from '@ophir/protocol';
+} from '@ophirai/protocol';
