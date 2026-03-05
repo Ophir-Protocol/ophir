@@ -3,6 +3,10 @@
   "version": "0.2.0",
   "description": "MCP tool server exposing Ophir agent negotiation as Model Context Protocol tools for LLM-powered agents",
   "type": "module",
+  "bin": {
+    "@ophirai/mcp-server": "dist/bin.js",
+    "ophir-mcp": "dist/bin.js"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "license": "MIT",
