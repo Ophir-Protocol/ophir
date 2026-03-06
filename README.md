@@ -85,15 +85,16 @@ await buyer.close();
 
 | Package | Description | Version |
 | ------- | ----------- | ------- |
-| [`@ophirai/protocol`](packages/protocol) | Core types, Zod schemas, state machine, SLA metrics, error codes | 0.2.0 |
-| [`@ophirai/sdk`](packages/sdk) | BuyerAgent, SellerAgent, Ed25519 signing, did:key identity, escrow | 0.2.0 |
-| [`@ophirai/registry`](packages/registry) | Agent discovery service with SQLite storage | 0.2.0 |
+| [`@ophirai/protocol`](packages/protocol) | Core types, Zod schemas, 12-state FSM, SLA metrics, error codes | 0.3.0 |
+| [`@ophirai/sdk`](packages/sdk) | BuyerAgent, SellerAgent, Ed25519 signing, did:key identity, escrow, clearinghouse | 0.3.0 |
+| [`@ophirai/clearinghouse`](packages/clearinghouse) | Multilateral netting, fractional margin, PoD scoring | 0.1.0 |
+| [`@ophirai/registry`](packages/registry) | Agent discovery with rate limiting, auth, reputation hardening | 0.3.0 |
 | [`@ophirai/mcp-server`](packages/mcp-server) | MCP tools for LLM-powered agents | 0.2.0 |
 | [`@ophirai/providers`](packages/providers) | AI inference provider wrappers (6 providers) | 0.2.0 |
 | [`@ophirai/router`](packages/router) | OpenAI-compatible inference gateway with auto-negotiation | 0.2.0 |
 | [`@ophirai/openai-adapter`](packages/openai-adapter) | OpenAI function calling adapter | 0.2.0 |
 | [`@ophirai/demo`](packages/demo) | Self-negotiating agent demo | 0.2.0 |
-| [`escrow`](packages/escrow) | Solana Anchor program for USDC escrow | -- |
+| [`escrow`](packages/escrow) | Solana Anchor program for USDC escrow with arbiter disputes | -- |
 | [`@ophirai/reference-agents`](packages/reference-agents) | Example buyer/seller agents | 0.1.0 |
 | [`@ophirai/docs`](packages/docs) | Protocol documentation | 0.1.0 |
 
@@ -124,17 +125,20 @@ await buyer.close();
                     │  BuyerAgent / Seller    │
                     │  Signing / Identity     │
                     │  Transport / Sessions   │
-                    └───────────┬────────────┘
-                                │
-                                ▼
-                    ┌────────────────────────┐
-                    │ Protocol (@ophirai/     │
-                    │          protocol)      │
-                    │  Types / Schemas /      │
-                    │  State Machine / SLA    │
-                    └───────────┬────────────┘
-                                │
-                                ▼
+                    └──────┬────────┬────────┘
+                           │        │
+              ┌────────────┘        └────────────┐
+              ▼                                   ▼
+   ┌────────────────────────┐        ┌────────────────────────┐
+   │ Clearinghouse          │        │ Protocol (@ophirai/     │
+   │ (@ophirai/             │        │          protocol)      │
+   │  clearinghouse)        │        │  Types / Schemas /      │
+   │  PoD Oracle / Netting  │        │  State Machine / SLA    │
+   │  Margin Assessment     │        └───────────┬────────────┘
+   └───────────┬────────────┘                    │
+               │                                 │
+               └─────────────┬───────────────────┘
+                             ▼
                     ┌────────────────────────┐
                     │   Solana Escrow         │
                     │   (Anchor Program)      │
@@ -151,11 +155,15 @@ await buyer.close();
 
 2. **Negotiate** -- The buyer sends a signed RFQ (Request for Quote) specifying service requirements, budget, and SLA targets. Sellers respond with signed quotes. Either party can counter-offer up to 5 rounds.
 
-3. **Execute** -- Both parties sign the final terms with Ed25519. The agreement hash (SHA-256 of canonical terms) binds the deal. Optionally, the buyer locks USDC in a Solana PDA escrow vault.
+3. **Agree** -- Both parties sign the final terms with Ed25519. The agreement hash (SHA-256 of canonical terms) binds the deal.
 
-4. **Monitor** -- The SDK tracks 8 SLA metrics (latency, uptime, accuracy, throughput, error rate, TTFB, custom) against committed targets during the service window.
+4. **Margin** -- The Clearinghouse assesses each party's Probability of Delivery (PoD) from historical SLA performance. Proven agents post as little as 5% margin instead of 100%. Circular debts are netted via the multilateral netting engine.
 
-5. **Dispute** -- If SLA violations are detected, the buyer files an on-chain dispute with evidence. The escrow splits funds according to the penalty rate, automatically compensating the buyer.
+5. **Escrow** -- The buyer locks USDC in a Solana PDA escrow vault (fractional deposit based on margin assessment).
+
+6. **Monitor** -- The SDK tracks 8 SLA metrics (latency, uptime, accuracy, throughput, error rate, TTFB, custom) against committed targets during the service window.
+
+7. **Dispute** -- If SLA violations are detected, the buyer files an on-chain dispute with arbiter co-sign. The escrow splits funds according to the penalty rate, automatically compensating the buyer.
 
 ---
 
@@ -164,7 +172,7 @@ await buyer.close();
 - **Transport**: JSON-RPC 2.0 over HTTP
 - **Identity**: `did:key` (Ed25519 public key with `0xed01` multicodec prefix)
 - **Signing**: Ed25519 via tweetnacl, JCS canonicalization (RFC 8785)
-- **State Machine**: 11 states (IDLE, RFQ_SENT, QUOTES_RECEIVED, COUNTERING, ACCEPTED, ESCROWED, ACTIVE, COMPLETED, REJECTED, DISPUTED, RESOLVED)
+- **State Machine**: 12 states (IDLE, RFQ_SENT, QUOTES_RECEIVED, COUNTERING, ACCEPTED, MARGIN_ASSESSED, ESCROWED, ACTIVE, COMPLETED, REJECTED, DISPUTED, RESOLVED)
 - **Settlement**: Solana Anchor program with PDA-derived USDC escrow vaults
 - **Message Types**: RFQ, Quote, Counter, Accept, Reject, Dispute
 

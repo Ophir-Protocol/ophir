@@ -1,6 +1,6 @@
 {
   "name": "@ophirai/registry",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Ophir Agent Registry — discovery service for AI agent negotiation",
   "type": "module",
   "main": "dist/index.js",

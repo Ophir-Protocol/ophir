@@ -83,5 +83,15 @@ Outcomes: `completed`, `disputed_won`, `disputed_lost`
 |--------|---------|-------------|
 | `port` | `8420` | HTTP listen port |
 | `dbPath` | `./ophir-registry.db` | SQLite database path |
-| `corsOrigin` | `'*'` | CORS allowed origin |
+| `corsOrigin` | `'https://ophirai.com'` | CORS allowed origin |
 | `staleCheckInterval` | `5` | Minutes between stale agent checks |
+
+## Security
+
+- **Rate limiting**: Global (100 req/min), challenge endpoint (10/min), reputation (20/min)
+- **Body size limit**: 16KB max JSON payload
+- **Security headers**: Helmet middleware (CSP, HSTS, X-Frame-Options, etc.)
+- **CORS**: Restricted by default (set `corsOrigin` to your domain)
+- **Challenge consumption**: Each auth challenge is single-use (deleted after verification)
+- **Reputation hardening**: Duplicate reports rejected (unique reporter+target+agreement), column whitelist prevents SQL injection
+- **LIKE escape**: Category search escapes `%` and `_` wildcards

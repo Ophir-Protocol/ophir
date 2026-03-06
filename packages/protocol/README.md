@@ -107,8 +107,16 @@ Zod validation schemas for runtime message validation:
 
 ### Errors
 
-- `OphirErrorCode` -- Enum of all error codes (`OPHIR_001` through `OPHIR_402`)
+- `OphirErrorCode` -- Enum of all error codes (`OPHIR_001` through `OPHIR_504`)
 - `OphirError` -- Typed error class with `code`, `message`, and optional `data`
+
+Error code ranges:
+- `OPHIR_001–006`: Message validation
+- `OPHIR_100–104`: Negotiation
+- `OPHIR_200–204`: Escrow
+- `OPHIR_300–301`: Dispute
+- `OPHIR_400–403`: Infrastructure
+- `OPHIR_500–504`: Clearinghouse (margin, exposure, netting, circuit breaker, PoD)
 
 ### SLA metric types
 
@@ -117,12 +125,21 @@ uptime_pct | p50_latency_ms | p99_latency_ms | accuracy_pct |
 throughput_rpm | error_rate_pct | time_to_first_byte_ms | custom
 ```
 
-### Negotiation states
+### State machine
+
+```typescript
+import { isValidTransition, isTerminalState, getValidNextStates } from '@ophirai/protocol';
+```
 
 ```
-IDLE -> RFQ_SENT -> QUOTES_RECEIVED -> COUNTERING -> ACCEPTED ->
-ESCROWED -> ACTIVE -> COMPLETED | REJECTED | DISPUTED -> RESOLVED
+IDLE → RFQ_SENT → QUOTES_RECEIVED → COUNTERING → ACCEPTED →
+MARGIN_ASSESSED → ESCROWED → ACTIVE → COMPLETED
+                                   ↘ DISPUTED → RESOLVED
+
+Any non-terminal state → REJECTED (terminal)
 ```
+
+12 states. Terminal: COMPLETED, REJECTED, RESOLVED.
 
 ## Documentation
 

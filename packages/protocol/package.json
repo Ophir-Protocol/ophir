@@ -1,6 +1,6 @@
 {
   "name": "@ophirai/protocol",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Core protocol definitions for the Ophir Agent Negotiation Protocol — types, schemas, state machine, SLA metrics, and error codes",
   "type": "module",
   "main": "dist/index.js",

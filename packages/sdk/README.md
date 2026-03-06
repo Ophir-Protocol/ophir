@@ -1,11 +1,11 @@
-# @ophir/sdk
+# @ophirai/sdk
 
 TypeScript SDK for the Ophir Agent Negotiation Protocol. Provides `BuyerAgent` and `SellerAgent` classes with built-in cryptographic signing, identity management, escrow integration, SLA tooling, and JSON-RPC transport.
 
 ## Installation
 
 ```bash
-npm install @ophir/sdk @ophir/protocol
+npm install @ophirai/sdk @ophirai/protocol
 ```
 
 ## Quick start
@@ -13,7 +13,7 @@ npm install @ophir/sdk @ophir/protocol
 ### Buyer
 
 ```typescript
-import { BuyerAgent } from '@ophir/sdk';
+import { BuyerAgent } from '@ophirai/sdk';
 
 const buyer = new BuyerAgent({ endpoint: 'http://localhost:3002' });
 await buyer.listen();
@@ -38,7 +38,7 @@ console.log(agreement.agreement_hash);
 ### Seller
 
 ```typescript
-import { SellerAgent } from '@ophir/sdk';
+import { SellerAgent } from '@ophirai/sdk';
 
 const seller = new SellerAgent({
   endpoint: 'http://localhost:3001',
@@ -119,6 +119,29 @@ See the full API reference for [BuyerAgent](../docs/sdk/buyer.md) and [SellerAge
 | `JsonRpcClient` | HTTP JSON-RPC 2.0 client for sending protocol messages |
 | `NegotiationServer` | HTTP JSON-RPC 2.0 server for receiving protocol messages |
 | `NegotiationSession` | State machine for tracking a single negotiation lifecycle |
+
+### Clearinghouse integration
+
+| Export | Description |
+|---|---|
+| `BuyerAgentConfig.clearinghouse` | Optional `ClearinghouseManager` for margin assessment and netting |
+
+When a `ClearinghouseManager` is provided, `acceptQuote()` automatically:
+1. Computes margin via the PoD Oracle (fractional deposit based on agent credit score)
+2. Transitions to `MARGIN_ASSESSED` before `ESCROWED`
+3. Checks the circuit breaker for exposure limits
+4. Registers the obligation in the netting engine
+
+```typescript
+import { ClearinghouseManager } from '@ophirai/clearinghouse';
+
+const clearinghouse = new ClearinghouseManager({ max_exposure_per_agent: 100_000 });
+
+const buyer = new BuyerAgent({
+  endpoint: 'http://localhost:3002',
+  clearinghouse,
+});
+```
 
 ### Integrations
 
