@@ -22,6 +22,7 @@ import { signMessage, verifyMessage, agreementHash } from './signing.js';
 import { NegotiationServer } from './server.js';
 import { NegotiationSession } from './negotiation.js';
 import { JsonRpcClient } from './transport.js';
+import type { ClearinghouseManager } from '@ophirai/clearinghouse';
 import type { ServiceOffering, PricingStrategy, Agreement } from './types.js';
 import type { AgentCard } from './discovery.js';
 import { attachWellKnown } from './wellknown.js';
@@ -36,6 +37,8 @@ export interface SellerAgentConfig {
   services: ServiceOffering[];
   /** Pricing strategy for quote generation (default: fixed). */
   pricingStrategy?: PricingStrategy;
+  /** Optional clearinghouse for margin assessment and multilateral netting. */
+  clearinghouse?: ClearinghouseManager;
 }
 
 /**
@@ -59,6 +62,7 @@ export class SellerAgent {
     counter: CounterParams,
     session: NegotiationSession,
   ) => Promise<QuoteParams | 'accept' | 'reject'>;
+  private clearinghouse?: ClearinghouseManager;
 
   constructor(config: SellerAgentConfig) {
     this.keypair = config.keypair ?? generateKeyPair();
@@ -66,6 +70,7 @@ export class SellerAgent {
     this.endpoint = config.endpoint;
     this.services = [...config.services];
     this.pricingStrategy = config.pricingStrategy ?? { type: 'fixed' };
+    this.clearinghouse = config.clearinghouse;
 
     this.server = new NegotiationServer();
     this.registerHandlers();
@@ -78,10 +83,8 @@ export class SellerAgent {
   private enforceNoDuplicate(messageId: string): void {
     const now = Date.now();
     const windowMs = DEFAULT_CONFIG.replay_protection_window_ms;
-    if (this.seenMessageIds.size > 1000) {
-      for (const [id, ts] of this.seenMessageIds) {
-        if (now - ts > windowMs) this.seenMessageIds.delete(id);
-      }
+    for (const [id, ts] of this.seenMessageIds) {
+      if (now - ts > windowMs) this.seenMessageIds.delete(id);
     }
     if (this.seenMessageIds.has(messageId)) {
       throw new OphirError(
@@ -288,6 +291,18 @@ export class SellerAgent {
         seller_signature: sellerCounterSignature,
       };
       session.accept(agreement);
+
+      // Clearinghouse: register the seller's side of the obligation
+      if (this.clearinghouse) {
+        const depositAmount = parseFloat(accept.final_terms.price_per_unit);
+        this.clearinghouse.registerObligation(
+          accept.agreement_id,
+          session.rfq.buyer.agent_id,
+          this.agentId,
+          depositAmount,
+        );
+      }
+
       return {
         status: 'accepted',
         agreement_id: accept.agreement_id,

@@ -2,9 +2,24 @@
 
 from __future__ import annotations
 
+import re
+import warnings
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
 import httpx
+
+_URL_RE = re.compile(r"^https?://[^\s/$.?#].[^\s]*$", re.IGNORECASE)
+
+
+def _check_tls(url: str, label: str = "URL") -> None:
+    parsed = urlparse(url)
+    if parsed.scheme == "http" and parsed.hostname not in ("localhost", "127.0.0.1", "::1"):
+        warnings.warn(
+            f"{label} uses http:// on a non-localhost host. "
+            "Use https:// to protect data in transit.",
+            stacklevel=3,
+        )
 
 
 class Client:
@@ -30,10 +45,17 @@ class Client:
         gateway_url: str = "https://api.ophirai.com",
         api_key: Optional[str] = None,
         timeout: float = 60.0,
+        verify_tls: bool = True,
     ) -> None:
+        if not _URL_RE.match(gateway_url):
+            raise ValueError(f"Invalid gateway URL: {gateway_url!r}")
+        if api_key is not None and not api_key.strip():
+            raise ValueError("api_key must be non-empty if provided")
+        _check_tls(gateway_url, "gateway_url")
         self.gateway_url = gateway_url.rstrip("/")
         self.api_key = api_key
         self._timeout = timeout
+        self._verify_tls = verify_tls
 
     # -- internal helpers ------------------------------------------------
 

@@ -5,6 +5,7 @@ import type {
   CounterParams,
 } from '@ophirai/protocol';
 import { OphirError, OphirErrorCode, DEFAULT_CONFIG, isValidTransition, isTerminalState, getValidNextStates } from '@ophirai/protocol';
+import type { MarginAssessment } from '@ophirai/clearinghouse';
 import type { Agreement } from './types.js';
 
 const DEFAULT_TIMEOUTS: Partial<Record<NegotiationState, number>> = {
@@ -34,6 +35,7 @@ export class NegotiationSession {
   updatedAt: Date;
   timeouts: Map<NegotiationState, number>;
   private escrowAddress?: string;
+  private marginAssessment?: MarginAssessment;
 
   constructor(rfq: RFQParams, maxRounds?: number) {
     this.rfqId = rfq.rfq_id;
@@ -135,6 +137,23 @@ export class NegotiationSession {
     this.applyTransition('ESCROWED');
   }
 
+  /** Record a margin assessment from the clearinghouse and transition to MARGIN_ASSESSED.
+   * @param assessment - The margin assessment result from the clearinghouse
+   * @throws {OphirError} When the transition from the current state to MARGIN_ASSESSED is not valid
+   */
+  marginAssessed(assessment: MarginAssessment): void {
+    this.enforceTransition('MARGIN_ASSESSED', 'marginAssessed');
+    this.marginAssessment = assessment;
+    this.applyTransition('MARGIN_ASSESSED');
+  }
+
+  /** Get the margin assessment, if one has been performed.
+   * @returns The MarginAssessment, or undefined if not yet assessed
+   */
+  getMarginAssessment(): MarginAssessment | undefined {
+    return this.marginAssessment;
+  }
+
   /** Activate the agreement so the seller begins service delivery.
    * @throws {OphirError} When the transition from the current state to ACTIVE is not valid
    */
@@ -212,6 +231,7 @@ export class NegotiationSession {
       currentRound: this.currentRound,
       maxRounds: this.maxRounds,
       escrowAddress: this.escrowAddress,
+      marginAssessment: this.marginAssessment,
       createdAt: this.createdAt.toISOString(),
       updatedAt: this.updatedAt.toISOString(),
     };

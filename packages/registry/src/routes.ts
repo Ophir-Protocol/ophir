@@ -132,14 +132,25 @@ export function createRouter(db: RegistryDB, auth: AuthMiddleware): express.Rout
       return;
     }
 
-    const { outcome, response_time_ms } = req.body as {
+    const { agreement_id, outcome, response_time_ms } = req.body as {
       agreement_id?: string;
       outcome?: 'completed' | 'disputed_won' | 'disputed_lost';
       response_time_ms?: number;
     };
 
+    if (!agreement_id || typeof agreement_id !== 'string') {
+      res.status(400).json({ success: false, error: 'Missing required field: agreement_id' });
+      return;
+    }
+
     if (!outcome || !['completed', 'disputed_won', 'disputed_lost'].includes(outcome)) {
       res.status(400).json({ success: false, error: 'Invalid outcome' });
+      return;
+    }
+
+    // Check for duplicate report (same reporter + target + agreement)
+    if (db.hasReputationReport(req.agentId!, targetAgentId, agreement_id)) {
+      res.status(409).json({ success: false, error: 'Duplicate report for this agreement' });
       return;
     }
 
@@ -165,6 +176,9 @@ export function createRouter(db: RegistryDB, auth: AuthMiddleware): express.Rout
       const totalTime = rep.avg_response_time_ms * rep.total_agreements;
       updates.avg_response_time_ms = (totalTime + response_time_ms) / (rep.total_agreements + 1);
     }
+
+    // Record the report to prevent duplicates
+    db.insertReputationReport(req.agentId!, targetAgentId, agreement_id, outcome);
 
     // Apply updates, then recompute score
     db.updateReputation(targetAgentId, updates);

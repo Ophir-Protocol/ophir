@@ -33,7 +33,7 @@ export const DEFAULT_CONFIG = {
 export const PROTOCOL_VERSION = '1.0' as const;
 
 /** Ophir escrow program ID on Solana mainnet/devnet. */
-export const ESCROW_PROGRAM_ID = 'CHwqh23SpWSM6WLsd15iQcP4KSkB351S9eGcN4fQSVqy' as const;
+export const ESCROW_PROGRAM_ID = 'Bcvw9tYGPu7M9hx7YRatv4GLz9Kv2BtZUckaoUgKfUFA' as const;
 
 /** All supported SLA metric names. */
 export const SUPPORTED_SLA_METRICS: readonly string[] = [
@@ -54,6 +54,7 @@ export const NEGOTIATION_STATES: readonly string[] = [
   'QUOTES_RECEIVED',
   'COUNTERING',
   'ACCEPTED',
+  'MARGIN_ASSESSED',
   'ESCROWED',
   'ACTIVE',
   'COMPLETED',

@@ -4,6 +4,8 @@ import { OphirError, OphirErrorCode } from '@ophirai/protocol';
 export interface JsonRpcClientConfig {
   /** Request timeout in milliseconds (default: 30000). */
   timeout?: number;
+  /** Require TLS (https://) for non-localhost endpoints (default: true in production). */
+  requireTls?: boolean;
 }
 
 const DEFAULT_TIMEOUT = 30_000;
@@ -15,9 +17,33 @@ const USER_AGENT = 'ophir-sdk/0.1.0';
  */
 export class JsonRpcClient {
   private timeout: number;
+  private requireTls: boolean;
 
   constructor(config?: JsonRpcClientConfig) {
     this.timeout = config?.timeout ?? DEFAULT_TIMEOUT;
+    this.requireTls = config?.requireTls ?? (typeof process !== 'undefined' && process.env.NODE_ENV === 'production');
+  }
+
+  /** Enforce TLS for non-localhost endpoints when requireTls is enabled. */
+  private enforceTransportSecurity(endpoint: string): void {
+    if (!this.requireTls) return;
+    try {
+      const url = new URL(endpoint);
+      if (url.protocol === 'https:') return;
+      const hostname = url.hostname;
+      if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') return;
+      throw new OphirError(
+        OphirErrorCode.INSECURE_TRANSPORT,
+        `TLS required: endpoint ${endpoint} does not use https:// and is not localhost`,
+        { endpoint },
+      );
+    } catch (err) {
+      if (err instanceof OphirError) throw err;
+      throw new OphirError(
+        OphirErrorCode.SELLER_UNREACHABLE,
+        `Invalid endpoint URL: ${endpoint}`,
+      );
+    }
   }
 
   /** Send a JSON-RPC 2.0 request and return the typed result.
@@ -41,6 +67,7 @@ export class JsonRpcClient {
         'Endpoint must be a non-empty string',
       );
     }
+    this.enforceTransportSecurity(endpoint);
     const requestId = id ?? crypto.randomUUID();
     const body = JSON.stringify({
       jsonrpc: '2.0',
@@ -98,7 +125,7 @@ export class JsonRpcClient {
     }
 
     // Validate response ID matches request ID to prevent response spoofing
-    if (json.id !== undefined && json.id !== requestId) {
+    if (json.id !== requestId) {
       throw new OphirError(
         OphirErrorCode.INVALID_MESSAGE,
         `JSON-RPC response ID mismatch: expected ${requestId}, got ${String(json.id)}`,
@@ -137,6 +164,7 @@ export class JsonRpcClient {
    * ```
    */
   async sendNotification(endpoint: string, method: string, params: object): Promise<void> {
+    this.enforceTransportSecurity(endpoint);
     const body = JSON.stringify({
       jsonrpc: '2.0',
       method,

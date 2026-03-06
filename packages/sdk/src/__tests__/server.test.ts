@@ -157,8 +157,7 @@ describe('NegotiationServer', () => {
       id: 6,
       error: {
         code: -32603,
-        message: 'something broke',
-        data: undefined,
+        message: 'Internal server error',
       },
     });
   });

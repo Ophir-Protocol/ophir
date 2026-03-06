@@ -10,13 +10,13 @@ import type { NegotiationState } from '../types.js';
 
 const ALL_STATES: NegotiationState[] = [
   'IDLE', 'RFQ_SENT', 'QUOTES_RECEIVED', 'COUNTERING',
-  'ACCEPTED', 'ESCROWED', 'ACTIVE', 'COMPLETED',
+  'ACCEPTED', 'MARGIN_ASSESSED', 'ESCROWED', 'ACTIVE', 'COMPLETED',
   'REJECTED', 'DISPUTED', 'RESOLVED',
 ];
 
 describe('VALID_TRANSITIONS', () => {
-  it('defines transitions for all 11 states', () => {
-    expect(Object.keys(VALID_TRANSITIONS)).toHaveLength(11);
+  it('defines transitions for all 12 states', () => {
+    expect(Object.keys(VALID_TRANSITIONS)).toHaveLength(12);
     for (const state of ALL_STATES) {
       expect(VALID_TRANSITIONS).toHaveProperty(state);
     }
@@ -38,8 +38,12 @@ describe('VALID_TRANSITIONS', () => {
     expect(VALID_TRANSITIONS.COUNTERING).toEqual(['COUNTERING', 'ACCEPTED', 'REJECTED']);
   });
 
-  it('ACCEPTED can transition to ESCROWED or REJECTED', () => {
-    expect(VALID_TRANSITIONS.ACCEPTED).toEqual(['ESCROWED', 'REJECTED']);
+  it('ACCEPTED can transition to MARGIN_ASSESSED or REJECTED', () => {
+    expect(VALID_TRANSITIONS.ACCEPTED).toEqual(['MARGIN_ASSESSED', 'REJECTED']);
+  });
+
+  it('MARGIN_ASSESSED can transition to ESCROWED or REJECTED', () => {
+    expect(VALID_TRANSITIONS.MARGIN_ASSESSED).toEqual(['ESCROWED', 'REJECTED']);
   });
 
   it('ESCROWED can only transition to ACTIVE', () => {
@@ -136,16 +140,32 @@ describe('isValidTransition', () => {
     expect(isValidTransition('COUNTERING', 'IDLE')).toBe(false);
   });
 
-  it('accepts ACCEPTED → ESCROWED', () => {
-    expect(isValidTransition('ACCEPTED', 'ESCROWED')).toBe(true);
+  it('accepts ACCEPTED → MARGIN_ASSESSED', () => {
+    expect(isValidTransition('ACCEPTED', 'MARGIN_ASSESSED')).toBe(true);
   });
 
   it('accepts ACCEPTED → REJECTED', () => {
     expect(isValidTransition('ACCEPTED', 'REJECTED')).toBe(true);
   });
 
+  it('rejects ACCEPTED → ESCROWED (must go through MARGIN_ASSESSED)', () => {
+    expect(isValidTransition('ACCEPTED', 'ESCROWED')).toBe(false);
+  });
+
   it('rejects ACCEPTED → ACTIVE', () => {
     expect(isValidTransition('ACCEPTED', 'ACTIVE')).toBe(false);
+  });
+
+  it('accepts MARGIN_ASSESSED → ESCROWED', () => {
+    expect(isValidTransition('MARGIN_ASSESSED', 'ESCROWED')).toBe(true);
+  });
+
+  it('accepts MARGIN_ASSESSED → REJECTED', () => {
+    expect(isValidTransition('MARGIN_ASSESSED', 'REJECTED')).toBe(true);
+  });
+
+  it('rejects MARGIN_ASSESSED → ACTIVE', () => {
+    expect(isValidTransition('MARGIN_ASSESSED', 'ACTIVE')).toBe(false);
   });
 
   it('accepts ESCROWED → ACTIVE', () => {
@@ -219,7 +239,7 @@ describe('isTerminalState', () => {
   it('returns false for all non-terminal states', () => {
     const nonTerminal: NegotiationState[] = [
       'IDLE', 'RFQ_SENT', 'QUOTES_RECEIVED', 'COUNTERING',
-      'ACCEPTED', 'ESCROWED', 'ACTIVE', 'DISPUTED',
+      'ACCEPTED', 'MARGIN_ASSESSED', 'ESCROWED', 'ACTIVE', 'DISPUTED',
     ];
     for (const state of nonTerminal) {
       expect(isTerminalState(state)).toBe(false);
@@ -248,9 +268,9 @@ describe('getValidNextStates', () => {
 });
 
 describe('full lifecycle transitions', () => {
-  it('validates the happy path: IDLE → RFQ_SENT → QUOTES_RECEIVED → ACCEPTED → ESCROWED → ACTIVE → COMPLETED', () => {
+  it('validates the happy path: IDLE → RFQ_SENT → QUOTES_RECEIVED → ACCEPTED → MARGIN_ASSESSED → ESCROWED → ACTIVE → COMPLETED', () => {
     const path: NegotiationState[] = [
-      'IDLE', 'RFQ_SENT', 'QUOTES_RECEIVED', 'ACCEPTED', 'ESCROWED', 'ACTIVE', 'COMPLETED',
+      'IDLE', 'RFQ_SENT', 'QUOTES_RECEIVED', 'ACCEPTED', 'MARGIN_ASSESSED', 'ESCROWED', 'ACTIVE', 'COMPLETED',
     ];
     for (let i = 0; i < path.length - 1; i++) {
       expect(isValidTransition(path[i], path[i + 1])).toBe(true);
@@ -260,7 +280,7 @@ describe('full lifecycle transitions', () => {
   it('validates the counter path: IDLE → RFQ_SENT → QUOTES_RECEIVED → COUNTERING → COUNTERING → ACCEPTED → ESCROWED → ACTIVE → COMPLETED', () => {
     const path: NegotiationState[] = [
       'IDLE', 'RFQ_SENT', 'QUOTES_RECEIVED', 'COUNTERING',
-      'COUNTERING', 'ACCEPTED', 'ESCROWED', 'ACTIVE', 'COMPLETED',
+      'COUNTERING', 'ACCEPTED', 'MARGIN_ASSESSED', 'ESCROWED', 'ACTIVE', 'COMPLETED',
     ];
     for (let i = 0; i < path.length - 1; i++) {
       expect(isValidTransition(path[i], path[i + 1])).toBe(true);

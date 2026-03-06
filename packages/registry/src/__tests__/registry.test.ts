@@ -51,7 +51,7 @@ function makeAgentCard(name: string, category = 'inference') {
 
 let baseUrl: string;
 let httpServer: Server;
-const registry = createRegistryServer({ port: 0, dbPath: ':memory:', staleCheckInterval: 9999 });
+const registry = createRegistryServer({ port: 0, dbPath: ':memory:', staleCheckInterval: 9999, rateLimitMax: 1000 });
 
 beforeAll(async () => {
   await new Promise<void>((resolve) => {
@@ -80,6 +80,9 @@ async function authenticate(did: string, secretKey: Uint8Array) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ agent_id: did }),
   });
+  if (!challengeRes.ok) {
+    throw new Error(`Challenge request failed: ${challengeRes.status} ${await challengeRes.text()}`);
+  }
   const { challenge } = (await challengeRes.json()) as { challenge: string };
   const signature = signChallenge(challenge, secretKey);
   return { 'X-Agent-Id': did, 'X-Agent-Signature': signature };
@@ -437,7 +440,7 @@ describe('Reputation', () => {
     const res = await fetch(`${baseUrl}/reputation/${encodeURIComponent(target.did)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...reportHeaders2 },
-      body: JSON.stringify({ outcome: 'completed', response_time_ms: 200 }),
+      body: JSON.stringify({ agreement_id: 'agree-001', outcome: 'completed', response_time_ms: 200 }),
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { success: boolean; data: ReputationRow };
@@ -459,7 +462,7 @@ describe('Reputation', () => {
     const res = await fetch(`${baseUrl}/reputation/${encodeURIComponent(kp.did)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...headers2 },
-      body: JSON.stringify({ outcome: 'completed' }),
+      body: JSON.stringify({ agreement_id: 'agree-self', outcome: 'completed' }),
     });
     expect(res.status).toBe(403);
   });

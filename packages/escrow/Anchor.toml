@@ -6,14 +6,17 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-ophir_escrow = "CHwqh23SpWSM6WLsd15iQcP4KSkB351S9eGcN4fQSVqy"
+ophir_escrow = "Bcvw9tYGPu7M9hx7YRatv4GLz9Kv2BtZUckaoUgKfUFA"
 
 [registry]
 url = "https://api.apr.dev"
 
+[programs.devnet]
+ophir_escrow = "Bcvw9tYGPu7M9hx7YRatv4GLz9Kv2BtZUckaoUgKfUFA"
+
 [provider]
-cluster = "localnet"
-wallet = "~/.config/solana/id.json"
+cluster = "https://devnet.helius-rpc.com/?api-key=380c8b5f-5220-4b3e-8850-78510b1ed03a"
+wallet = "/home/cryptalis/Ironq_test/test-wallet.json"
 
 [scripts]
-test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 \"tests/**/*.ts\""
+test = "npx ts-mocha -p ./tsconfig.json -t 1000000 \"tests/**/*.ts\""

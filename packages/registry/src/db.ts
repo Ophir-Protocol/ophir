@@ -77,6 +77,16 @@ const SCHEMA = `
     expires_at TEXT NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS reputation_reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    reporter_id TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    agreement_id TEXT NOT NULL,
+    outcome TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(reporter_id, target_id, agreement_id)
+  );
+
   CREATE INDEX IF NOT EXISTS idx_agents_status ON agents(status);
   CREATE INDEX IF NOT EXISTS idx_agents_services ON agents(services);
   CREATE INDEX IF NOT EXISTS idx_challenges_agent ON challenges(agent_id);
@@ -131,8 +141,9 @@ export class RegistryDB {
     const params: unknown[] = [];
 
     if (query.category) {
-      conditions.push("a.services LIKE ?");
-      params.push(`%"category":"${query.category}"%`);
+      const escaped = query.category.replace(/[%_]/g, '\\$&');
+      conditions.push("a.services LIKE ? ESCAPE '\\'");
+      params.push(`%"category":"${escaped}"%`);
     }
 
     if (query.minReputation !== undefined) {
@@ -253,6 +264,21 @@ export class RegistryDB {
     return row !== undefined;
   }
 
+  hasReputationReport(reporterId: string, targetId: string, agreementId: string): boolean {
+    const row = this.db.prepare(`
+      SELECT 1 FROM reputation_reports
+      WHERE reporter_id = ? AND target_id = ? AND agreement_id = ?
+    `).get(reporterId, targetId, agreementId);
+    return row !== undefined;
+  }
+
+  insertReputationReport(reporterId: string, targetId: string, agreementId: string, outcome: string): void {
+    this.db.prepare(`
+      INSERT INTO reputation_reports (reporter_id, target_id, agreement_id, outcome)
+      VALUES (?, ?, ?, ?)
+    `).run(reporterId, targetId, agreementId, outcome);
+  }
+
   getReputation(agentId: string): ReputationRow | undefined {
     return this.db.prepare(`
       SELECT * FROM reputation WHERE agent_id = ?
@@ -260,11 +286,23 @@ export class RegistryDB {
   }
 
   updateReputation(agentId: string, updates: Partial<ReputationRow>): void {
+    const ALLOWED_COLUMNS = new Set([
+      'total_agreements',
+      'completed_agreements',
+      'disputes_won',
+      'disputes_lost',
+      'avg_response_time_ms',
+      'score',
+    ]);
+
     const fields: string[] = [];
     const values: unknown[] = [];
 
     for (const [key, value] of Object.entries(updates)) {
       if (key === 'agent_id') continue;
+      if (!ALLOWED_COLUMNS.has(key)) {
+        throw new Error(`Invalid reputation column: ${key}`);
+      }
       fields.push(`${key} = ?`);
       values.push(value);
     }

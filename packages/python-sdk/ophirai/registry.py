@@ -2,9 +2,21 @@
 
 from __future__ import annotations
 
+import warnings
 from typing import Any, Dict, List, Optional
+from urllib.parse import quote, urlparse
 
 import httpx
+
+
+def _check_tls(url: str, label: str = "URL") -> None:
+    parsed = urlparse(url)
+    if parsed.scheme == "http" and parsed.hostname not in ("localhost", "127.0.0.1", "::1"):
+        warnings.warn(
+            f"{label} uses http:// on a non-localhost host. "
+            "Use https:// to protect data in transit.",
+            stacklevel=3,
+        )
 
 
 class Registry:
@@ -22,9 +34,12 @@ class Registry:
         self,
         url: str = "https://registry.ophirai.com",
         timeout: float = 30.0,
+        verify_tls: bool = True,
     ) -> None:
+        _check_tls(url, "registry url")
         self.url = url.rstrip("/")
         self._timeout = timeout
+        self._verify_tls = verify_tls
 
     def _client(self) -> httpx.Client:
         return httpx.Client(timeout=self._timeout)
@@ -87,7 +102,7 @@ class Registry:
             The agent's ``did:key`` identifier.
         """
         with self._client() as client:
-            resp = client.get(f"{self.url}/agents/{agent_id}")
+            resp = client.get(f"{self.url}/agents/{quote(agent_id, safe='')}")
             resp.raise_for_status()
             data = resp.json()
             if isinstance(data, dict) and "data" in data:
@@ -173,7 +188,7 @@ class Registry:
     async def aget_agent(self, agent_id: str) -> dict:
         """Async version of :meth:`get_agent`."""
         async with httpx.AsyncClient(timeout=self._timeout) as client:
-            resp = await client.get(f"{self.url}/agents/{agent_id}")
+            resp = await client.get(f"{self.url}/agents/{quote(agent_id, safe='')}")
             resp.raise_for_status()
             data = resp.json()
             if isinstance(data, dict) and "data" in data:

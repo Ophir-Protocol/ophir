@@ -53,7 +53,7 @@ describe('PROTOCOL_VERSION', () => {
 
 describe('ESCROW_PROGRAM_ID', () => {
   it('is a valid base58 Solana program ID', () => {
-    expect(ESCROW_PROGRAM_ID).toBe('CHwqh23SpWSM6WLsd15iQcP4KSkB351S9eGcN4fQSVqy');
+    expect(ESCROW_PROGRAM_ID).toBe('Bcvw9tYGPu7M9hx7YRatv4GLz9Kv2BtZUckaoUgKfUFA');
     expect(ESCROW_PROGRAM_ID).toMatch(/^[1-9A-HJ-NP-Za-km-z]+$/);
   });
 });
@@ -97,8 +97,8 @@ describe('SUPPORTED_SLA_METRICS', () => {
 });
 
 describe('NEGOTIATION_STATES', () => {
-  it('contains all 11 states', () => {
-    expect(NEGOTIATION_STATES).toHaveLength(11);
+  it('contains all 12 states', () => {
+    expect(NEGOTIATION_STATES).toHaveLength(12);
   });
 
   it('includes all states in lifecycle order', () => {
@@ -108,6 +108,7 @@ describe('NEGOTIATION_STATES', () => {
       'QUOTES_RECEIVED',
       'COUNTERING',
       'ACCEPTED',
+      'MARGIN_ASSESSED',
       'ESCROWED',
       'ACTIVE',
       'COMPLETED',

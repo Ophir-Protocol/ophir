@@ -1,0 +1,25 @@
+{
+  "name": "@ophirai/clearinghouse",
+  "version": "0.1.0",
+  "description": "Agentic Clearinghouse for the Ophir Agent Negotiation Protocol — multilateral netting, fractional margin, and Probability of Delivery scoring",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "dev": "vitest",
+    "lint": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "files": ["dist"],
+  "dependencies": {
+    "@ophirai/protocol": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0",
+    "@types/node": "^22.0.0"
+  }
+}

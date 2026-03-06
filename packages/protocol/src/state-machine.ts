@@ -16,10 +16,10 @@
  *                  REJECTED  ACCEPTED  REJECTED  ACCEPTED  REJECTED
  *                               |
  *                               v
- *                           ESCROWED ──> ACTIVE ──> COMPLETED
- *                                           |
- *                                           v
- *                                       DISPUTED ──> RESOLVED
+ *                        MARGIN_ASSESSED ──> ESCROWED ──> ACTIVE ──> COMPLETED
+ *                               |                            |
+ *                               v                            v
+ *                            REJECTED                    DISPUTED ──> RESOLVED
  * ```
  *
  * Terminal states: COMPLETED, REJECTED, RESOLVED
@@ -35,7 +35,8 @@ import type { NegotiationState } from './types.js';
  * - RFQ_SENT → QUOTES_RECEIVED | REJECTED: seller quotes or buyer/seller rejects
  * - QUOTES_RECEIVED → COUNTERING | ACCEPTED | REJECTED: counter, accept, or reject
  * - COUNTERING → COUNTERING | ACCEPTED | REJECTED: another round, accept, or reject
- * - ACCEPTED → ESCROWED | REJECTED: fund escrow or refuse to counter-sign
+ * - ACCEPTED → MARGIN_ASSESSED | REJECTED: clearinghouse margin assessment or counter-sign refused
+ * - MARGIN_ASSESSED → ESCROWED | REJECTED: fund escrow or reject after assessment
  * - ESCROWED → ACTIVE: service delivery begins
  * - ACTIVE → COMPLETED | DISPUTED: success or SLA violation
  * - DISPUTED → RESOLVED: dispute adjudicated
@@ -46,7 +47,8 @@ export const VALID_TRANSITIONS: Readonly<Record<NegotiationState, readonly Negot
   RFQ_SENT: ['QUOTES_RECEIVED', 'REJECTED'],
   QUOTES_RECEIVED: ['COUNTERING', 'ACCEPTED', 'REJECTED'],
   COUNTERING: ['COUNTERING', 'ACCEPTED', 'REJECTED'],
-  ACCEPTED: ['ESCROWED', 'REJECTED'],
+  ACCEPTED: ['MARGIN_ASSESSED', 'REJECTED'],
+  MARGIN_ASSESSED: ['ESCROWED', 'REJECTED'],
   ESCROWED: ['ACTIVE'],
   ACTIVE: ['COMPLETED', 'DISPUTED'],
   COMPLETED: [],

@@ -53,17 +53,28 @@
 //!   its lamports are returned to the buyer via `close = buyer`.
 
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
+use anchor_spl::token::{self, CloseAccount, Mint, Token, TokenAccount, Transfer};
 
-declare_id!("CHwqh23SpWSM6WLsd15iQcP4KSkB351S9eGcN4fQSVqy");
+declare_id!("Bcvw9tYGPu7M9hx7YRatv4GLz9Kv2BtZUckaoUgKfUFA");
 
 // ─── Constants ───────────────────────────────────────────────────────────────────
 
-/// Maximum penalty rate in basis points (10 000 = 100%).
-const MAX_PENALTY_RATE_BPS: u16 = 10_000;
+/// Maximum penalty rate in basis points (5 000 = 50%).
+/// Capped at 50% to prevent buyer rug-pulls via unilateral dispute.
+const MAX_PENALTY_RATE_BPS: u16 = 5_000;
 
 /// Divisor used to convert basis points to a fractional multiplier.
 const BPS_DENOMINATOR: u128 = 10_000;
+
+/// Minimum timeout in slots (~40 seconds at 400ms/slot).
+const MIN_TIMEOUT_SLOTS: u64 = 100;
+
+/// Maximum timeout in slots (~1 year at 400ms/slot).
+const MAX_TIMEOUT_SLOTS: u64 = 78_840_000;
+
+/// Minimum slots after creation before a dispute can be filed.
+/// ~3 minutes at 400ms/slot — gives seller time to deliver or respond.
+const DISPUTE_COOLDOWN_SLOTS: u64 = 450;
 
 /// PDA seed prefix for escrow accounts.
 const ESCROW_SEED: &[u8] = b"escrow";
@@ -119,18 +130,25 @@ pub mod ophir_escrow {
         penalty_rate_bps: u16,
     ) -> Result<()> {
         require!(deposit_amount > 0, EscrowError::InvalidDeposit);
-        require!(timeout_slots > 0, EscrowError::InvalidTimeout);
+        require!(timeout_slots >= MIN_TIMEOUT_SLOTS, EscrowError::TimeoutTooShort);
+        require!(timeout_slots <= MAX_TIMEOUT_SLOTS, EscrowError::TimeoutTooLong);
         require!(penalty_rate_bps <= MAX_PENALTY_RATE_BPS, EscrowError::InvalidPenaltyRate);
+        require!(
+            ctx.accounts.buyer.key() != ctx.accounts.seller.key(),
+            EscrowError::BuyerCannotBeSeller
+        );
 
         let clock = Clock::get()?;
         let escrow = &mut ctx.accounts.escrow;
         escrow.buyer = ctx.accounts.buyer.key();
         escrow.seller = ctx.accounts.seller.key();
+        escrow.arbiter = ctx.accounts.arbiter.key();
         escrow.mint = ctx.accounts.mint.key();
         escrow.agreement_hash = agreement_hash;
         escrow.deposit_amount = deposit_amount;
         escrow.penalty_rate_bps = penalty_rate_bps;
         escrow.created_at = clock.unix_timestamp;
+        escrow.created_slot = clock.slot;
         escrow.timeout_slot = clock.slot.checked_add(timeout_slots)
             .ok_or(EscrowError::ArithmeticOverflow)?;
         escrow.status = EscrowStatus::Active;
@@ -152,6 +170,7 @@ pub mod ophir_escrow {
         emit!(EscrowCreated {
             buyer: ctx.accounts.buyer.key(),
             seller: ctx.accounts.seller.key(),
+            arbiter: ctx.accounts.arbiter.key(),
             agreement_hash,
             deposit_amount,
         });
@@ -214,6 +233,17 @@ pub mod ophir_escrow {
             vault_balance,
         )?;
 
+        // Close vault token account to reclaim rent
+        token::close_account(CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            CloseAccount {
+                account: ctx.accounts.vault.to_account_info(),
+                destination: ctx.accounts.seller.to_account_info(),
+                authority: ctx.accounts.escrow.to_account_info(),
+            },
+            &[seeds],
+        ))?;
+
         let escrow = &mut ctx.accounts.escrow;
         escrow.status = EscrowStatus::Released;
 
@@ -263,11 +293,24 @@ pub mod ophir_escrow {
     ) -> Result<()> {
         let escrow = &ctx.accounts.escrow;
 
+        // Enforce dispute cooldown — buyer must wait DISPUTE_COOLDOWN_SLOTS
+        // after creation before filing a dispute (prevents instant rug + MEV)
+        let clock = Clock::get()?;
+        let earliest_dispute_slot = escrow.created_slot
+            .checked_add(DISPUTE_COOLDOWN_SLOTS)
+            .ok_or(EscrowError::ArithmeticOverflow)?;
+        require!(
+            clock.slot >= earliest_dispute_slot,
+            EscrowError::DisputeCooldownNotMet
+        );
+
         // Validate penalty does not exceed max
-        let max_penalty = (escrow.deposit_amount as u128)
+        let max_penalty: u64 = (escrow.deposit_amount as u128)
             .checked_mul(escrow.penalty_rate_bps as u128)
             .and_then(|v| v.checked_div(BPS_DENOMINATOR))
-            .ok_or(EscrowError::PenaltyExceedsMax)? as u64;
+            .ok_or(EscrowError::PenaltyExceedsMax)?
+            .try_into()
+            .map_err(|_| EscrowError::ArithmeticOverflow)?;
         require!(penalty_amount <= max_penalty, EscrowError::PenaltyExceedsMax);
 
         let vault_balance = ctx.accounts.vault.amount;
@@ -317,6 +360,17 @@ pub mod ophir_escrow {
                 seller_amount,
             )?;
         }
+
+        // Close vault token account to reclaim rent
+        token::close_account(CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            CloseAccount {
+                account: ctx.accounts.vault.to_account_info(),
+                destination: ctx.accounts.buyer.to_account_info(),
+                authority: ctx.accounts.escrow.to_account_info(),
+            },
+            signer_seeds,
+        ))?;
 
         let escrow = &mut ctx.accounts.escrow;
         escrow.status = EscrowStatus::Disputed;
@@ -386,6 +440,17 @@ pub mod ophir_escrow {
             vault_balance,
         )?;
 
+        // Close vault token account to reclaim rent
+        token::close_account(CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            CloseAccount {
+                account: ctx.accounts.vault.to_account_info(),
+                destination: ctx.accounts.buyer.to_account_info(),
+                authority: ctx.accounts.escrow.to_account_info(),
+            },
+            &[seeds],
+        ))?;
+
         let escrow = &mut ctx.accounts.escrow;
         escrow.status = EscrowStatus::Cancelled;
 
@@ -418,6 +483,11 @@ pub struct MakeEscrow<'info> {
     /// sign at creation time. Validated as a signer in [`ReleaseEscrow`] and
     /// as an owner match in [`DisputeEscrow`].
     pub seller: UncheckedAccount<'info>,
+
+    /// The neutral arbiter who must co-sign disputes.
+    /// CHECK: Arbiter pubkey is stored in the escrow state. Must co-sign
+    /// dispute_escrow to prevent buyer unilateral fund clawback.
+    pub arbiter: UncheckedAccount<'info>,
 
     /// The escrow PDA that holds agreement state.
     /// Seeds: `["escrow", buyer_pubkey, agreement_hash]`.
@@ -477,13 +547,21 @@ pub struct ReleaseEscrow<'info> {
     #[account(mut)]
     pub seller: Signer<'info>,
 
+    /// The buyer account to receive rent from closed escrow.
+    /// CHECK: Validated via has_one on escrow. Only receives lamports.
+    #[account(mut)]
+    pub buyer: UncheckedAccount<'info>,
+
     /// The escrow PDA. Anchor constraints enforce:
     /// - `escrow.seller == seller.key()` (seller identity)
     /// - `escrow.status == Active` (no double-release)
     /// - PDA re-derivation via seeds and bump
+    /// `close = buyer` reclaims escrow rent to the buyer.
     #[account(
         mut,
+        close = buyer,
         has_one = seller @ EscrowError::InvalidSeller,
+        has_one = buyer @ EscrowError::Unauthorized,
         constraint = escrow.status == EscrowStatus::Active @ EscrowError::EscrowNotActive,
         seeds = [ESCROW_SEED, escrow.buyer.as_ref(), escrow.agreement_hash.as_ref()],
         bump = escrow.bump,
@@ -525,13 +603,20 @@ pub struct DisputeEscrow<'info> {
     #[account(mut)]
     pub buyer: Signer<'info>,
 
+    /// The neutral arbiter who must co-sign the dispute.
+    /// Prevents buyer from unilaterally clawing back funds.
+    pub arbiter: Signer<'info>,
+
     /// The escrow PDA. Anchor constraints enforce:
     /// - `escrow.buyer == buyer.key()` (buyer identity)
+    /// - `escrow.arbiter == arbiter.key()` (arbiter identity)
     /// - `escrow.status == Active` (no double-dispute)
     /// - PDA re-derivation via seeds and bump
     #[account(
         mut,
+        close = buyer,
         has_one = buyer @ EscrowError::Unauthorized,
+        has_one = arbiter @ EscrowError::InvalidArbiter,
         constraint = escrow.status == EscrowStatus::Active @ EscrowError::EscrowNotActive,
         seeds = [ESCROW_SEED, buyer.key().as_ref(), escrow.agreement_hash.as_ref()],
         bump = escrow.bump,
@@ -630,30 +715,36 @@ pub struct CancelEscrow<'info> {
 /// status. The account size is deterministic via `InitSpace` and includes an
 /// 8-byte Anchor discriminator prefix.
 ///
-/// ## Field Layout (156 bytes + 8 discriminator = 164 total)
+/// ## Field Layout (196 bytes + 8 discriminator = 204 total)
 ///
 /// | Field              | Type        | Size  | Description                                 |
 /// |--------------------|-------------|-------|---------------------------------------------|
 /// | `buyer`            | `Pubkey`    | 32    | Depositor / dispute initiator / canceller   |
 /// | `seller`           | `Pubkey`    | 32    | Payment recipient on release                |
+/// | `arbiter`          | `Pubkey`    | 32    | Neutral arbiter who co-signs disputes       |
 /// | `mint`             | `Pubkey`    | 32    | SPL token mint for the escrowed asset       |
 /// | `agreement_hash`   | `[u8; 32]`  | 32    | SHA-256 of canonicalized agreement terms    |
 /// | `deposit_amount`   | `u64`       | 8     | Tokens deposited (smallest unit)            |
 /// | `penalty_rate_bps` | `u16`       | 2     | Max penalty cap in basis points             |
 /// | `created_at`       | `i64`       | 8     | Unix timestamp at creation                  |
+/// | `created_slot`     | `u64`       | 8     | Slot at creation (for dispute cooldown)     |
 /// | `timeout_slot`     | `u64`       | 8     | Slot after which cancellation is allowed    |
 /// | `status`           | `EscrowStatus` | 1  | Current lifecycle state                     |
 /// | `bump`             | `u8`        | 1     | PDA bump seed for signer derivation         |
 #[account]
 #[derive(InitSpace)]
 pub struct EscrowAccount {
-    /// The buyer's wallet address. This party deposits tokens, can dispute,
-    /// and can cancel after timeout.
+    /// The buyer's wallet address. This party deposits tokens, can dispute
+    /// (with arbiter co-sign), and can cancel after timeout.
     pub buyer: Pubkey,
 
     /// The seller's wallet address. This party receives tokens on release
     /// and receives the remainder after penalty on dispute.
     pub seller: Pubkey,
+
+    /// The neutral arbiter's wallet address. Must co-sign any dispute
+    /// to prevent buyer from unilaterally clawing back funds.
+    pub arbiter: Pubkey,
 
     /// The SPL token mint address (e.g. USDC). All token accounts in the
     /// escrow instructions must match this mint.
@@ -669,14 +760,18 @@ pub struct EscrowAccount {
     /// Must be greater than zero at creation.
     pub deposit_amount: u64,
 
-    /// Maximum penalty rate in basis points. During a dispute the buyer
-    /// can claim at most `deposit_amount * penalty_rate_bps / 10_000`.
-    /// Range: 0..=10 000 (0% to 100%).
+    /// Maximum penalty rate in basis points. During a dispute the arbiter
+    /// and buyer can claim at most `deposit_amount * penalty_rate_bps / 10_000`.
+    /// Range: 0..=5 000 (0% to 50%).
     pub penalty_rate_bps: u16,
 
     /// Unix timestamp (seconds since epoch) recorded at escrow creation.
     /// Informational; not used for on-chain timeout logic.
     pub created_at: i64,
+
+    /// Slot number when the escrow was created. Used to enforce the
+    /// dispute cooldown period (DISPUTE_COOLDOWN_SLOTS).
+    pub created_slot: u64,
 
     /// Slot number after which the buyer may cancel the escrow. Computed
     /// as `creation_slot + timeout_slots` during `make_escrow`.
@@ -719,6 +814,8 @@ pub struct EscrowCreated {
     pub buyer: Pubkey,
     /// The seller's wallet address.
     pub seller: Pubkey,
+    /// The arbiter's wallet address.
+    pub arbiter: Pubkey,
     /// SHA-256 hash of the agreement terms (PDA seed component).
     pub agreement_hash: [u8; 32],
     /// Amount deposited into the vault.
@@ -787,6 +884,14 @@ pub enum EscrowError {
     #[msg("Timeout slots must be greater than zero")]
     InvalidTimeout,
 
+    /// The `timeout_slots` is below the minimum (100 slots).
+    #[msg("Timeout too short, minimum is 100 slots")]
+    TimeoutTooShort,
+
+    /// The `timeout_slots` exceeds the maximum (~1 year).
+    #[msg("Timeout too long, maximum is 78840000 slots")]
+    TimeoutTooLong,
+
     /// The `penalty_rate_bps` must not exceed 10 000 (100%).
     #[msg("Penalty rate must not exceed 10000 basis points")]
     InvalidPenaltyRate,
@@ -810,4 +915,16 @@ pub enum EscrowError {
     /// exceeds `u64::MAX`.
     #[msg("Arithmetic overflow")]
     ArithmeticOverflow,
+
+    /// The buyer and seller cannot be the same account.
+    #[msg("Buyer and seller cannot be the same account")]
+    BuyerCannotBeSeller,
+
+    /// The arbiter account does not match `escrow.arbiter`.
+    #[msg("Invalid arbiter account")]
+    InvalidArbiter,
+
+    /// The dispute cooldown period has not elapsed since escrow creation.
+    #[msg("Dispute cooldown not met, must wait 450 slots after creation")]
+    DisputeCooldownNotMet,
 }

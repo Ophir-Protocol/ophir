@@ -15,7 +15,7 @@ export class NegotiationServer {
 
   constructor() {
     this.app = express();
-    this.app.use(express.json());
+    this.app.use(express.json({ limit: '64kb' }));
 
     this.app.post('/', async (req, res) => {
       if (!req.body || typeof req.body !== 'object') {
@@ -80,18 +80,27 @@ export class NegotiationServer {
           res.status(204).end();
           return;
         }
-        const isOphirError = err instanceof OphirError;
-        res.json({
-          jsonrpc: '2.0',
-          id,
-          error: {
-            code: isOphirError ? -32000 : -32603,
-            message: err instanceof Error ? err.message : 'Internal error',
-            data: isOphirError
-              ? { ophir_code: err.code, ...err.data }
-              : undefined,
-          },
-        });
+        if (err instanceof OphirError) {
+          res.json({
+            jsonrpc: '2.0',
+            id,
+            error: {
+              code: -32000,
+              message: err.message,
+              data: { ophir_code: err.code, ...err.data },
+            },
+          });
+        } else {
+          console.error('Unhandled server error:', err);
+          res.json({
+            jsonrpc: '2.0',
+            id,
+            error: {
+              code: -32603,
+              message: 'Internal server error',
+            },
+          });
+        }
       }
     });
   }

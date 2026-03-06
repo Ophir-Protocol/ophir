@@ -24,6 +24,7 @@ import { NegotiationSession } from './negotiation.js';
 import { JsonRpcClient } from './transport.js';
 import { buildRFQ, buildCounter, buildAccept, buildReject, buildDispute } from './messages.js';
 import { autoDiscover } from './registry.js';
+import type { ClearinghouseManager } from '@ophirai/clearinghouse';
 import type { EscrowConfig, RankingFunction, SellerInfo, Agreement, DisputeResult } from './types.js';
 
 /** Configuration for creating a BuyerAgent. */
@@ -40,6 +41,8 @@ export interface BuyerAgentConfig {
   registryEndpoints?: string[];
   /** Optional fallback endpoints for A2A discovery when registry is unavailable. */
   fallbackEndpoints?: string[];
+  /** Optional clearinghouse for margin assessment and multilateral netting. */
+  clearinghouse?: ClearinghouseManager;
 }
 
 /**
@@ -59,6 +62,7 @@ export class BuyerAgent {
   private seenMessageIds = new Map<string, number>();
   private registryEndpoints?: string[];
   private fallbackEndpoints?: string[];
+  private clearinghouse?: ClearinghouseManager;
 
   constructor(config: BuyerAgentConfig) {
     this.keypair = config.keypair ?? generateKeyPair();
@@ -66,6 +70,7 @@ export class BuyerAgent {
     this.endpoint = config.endpoint;
     this.registryEndpoints = config.registryEndpoints;
     this.fallbackEndpoints = config.fallbackEndpoints;
+    this.clearinghouse = config.clearinghouse;
     this.transport = new JsonRpcClient();
     this.server = new NegotiationServer();
     this.registerHandlers();
@@ -78,10 +83,8 @@ export class BuyerAgent {
     const now = Date.now();
     // Evict expired entries (older than the replay window)
     const windowMs = DEFAULT_CONFIG.replay_protection_window_ms;
-    if (this.seenMessageIds.size > 1000) {
-      for (const [id, ts] of this.seenMessageIds) {
-        if (now - ts > windowMs) this.seenMessageIds.delete(id);
-      }
+    for (const [id, ts] of this.seenMessageIds) {
+      if (now - ts > windowMs) this.seenMessageIds.delete(id);
     }
     if (this.seenMessageIds.has(messageId)) {
       throw new OphirError(
@@ -541,6 +544,35 @@ export class BuyerAgent {
     const session = this.sessions.get(quote.rfq_id);
     if (session) {
       session.accept(agreement);
+
+      // Clearinghouse: assess margin and register obligation
+      if (this.clearinghouse) {
+        const depositAmount = parseFloat(finalTerms.price_per_unit);
+        const assessment = this.clearinghouse.assessMargin(
+          {
+            agreement_id: agreement.agreement_id,
+            buyer_id: this.agentId,
+            seller_id: quote.seller.agent_id,
+          },
+          depositAmount,
+        );
+        session.marginAssessed(assessment);
+
+        if (this.clearinghouse.checkCircuitBreaker(this.agentId)) {
+          throw new OphirError(
+            OphirErrorCode.EXPOSURE_LIMIT_EXCEEDED,
+            `Buyer ${this.agentId} has exceeded the clearinghouse exposure limit`,
+            { agentId: this.agentId, agreementId: agreement.agreement_id },
+          );
+        }
+
+        this.clearinghouse.registerObligation(
+          agreement.agreement_id,
+          this.agentId,
+          quote.seller.agent_id,
+          depositAmount,
+        );
+      }
     }
 
     return agreement;

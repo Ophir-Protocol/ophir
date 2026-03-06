@@ -396,7 +396,8 @@ export interface DisputeParams {
  * - **RFQ_SENT** → `QUOTES_RECEIVED` (seller responds with a quote) | `REJECTED` (buyer or seller rejects)
  * - **QUOTES_RECEIVED** → `COUNTERING` (either party counter-offers) | `ACCEPTED` (buyer accepts a quote) | `REJECTED` (buyer rejects all quotes)
  * - **COUNTERING** → `COUNTERING` (another counter round) | `ACCEPTED` (terms agreed) | `REJECTED` (party walks away)
- * - **ACCEPTED** → `ESCROWED` (escrow funded on Solana) | `REJECTED` (counter-sign refused)
+ * - **ACCEPTED** → `MARGIN_ASSESSED` (clearinghouse margin assessment) | `REJECTED` (counter-sign refused)
+ * - **MARGIN_ASSESSED** → `ESCROWED` (escrow funded on Solana) | `REJECTED` (rejected after assessment)
  * - **ESCROWED** → `ACTIVE` (service delivery begins)
  * - **ACTIVE** → `COMPLETED` (service delivered successfully) | `DISPUTED` (SLA violation filed)
  * - **COMPLETED** → terminal state
@@ -410,6 +411,7 @@ export type NegotiationState =
   | 'QUOTES_RECEIVED'
   | 'COUNTERING'
   | 'ACCEPTED'
+  | 'MARGIN_ASSESSED'
   | 'ESCROWED'
   | 'ACTIVE'
   | 'COMPLETED'

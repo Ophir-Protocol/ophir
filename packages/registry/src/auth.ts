@@ -67,15 +67,22 @@ export function createAuthMiddleware(db: RegistryDB): AuthMiddleware {
     }
 
     const challenges = db.getActiveChallenges(agentId);
-    const verified = challenges.some((challenge) => {
+    let matchedChallenge: string | undefined;
+    for (const challenge of challenges) {
       const message = new TextEncoder().encode(challenge);
-      return nacl.sign.detached.verify(message, new Uint8Array(signature), publicKey);
-    });
+      if (nacl.sign.detached.verify(message, new Uint8Array(signature), publicKey)) {
+        matchedChallenge = challenge;
+        break;
+      }
+    }
 
-    if (!verified) {
+    if (!matchedChallenge) {
       res.status(403).json({ error: 'Invalid signature' });
       return;
     }
+
+    // Consume the challenge so it cannot be replayed
+    db.verifyChallenge(agentId, matchedChallenge);
 
     req.agentId = agentId;
     next();

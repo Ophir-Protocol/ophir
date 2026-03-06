@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { NegotiationSession } from '../negotiation.js';
 import { OphirErrorCode, OphirError } from '@ophirai/protocol';
 import type { RFQParams, QuoteParams, CounterParams } from '@ophirai/protocol';
+import type { MarginAssessment } from '@ophirai/clearinghouse';
 import type { Agreement } from '../types.js';
 
 function makeRFQ(overrides?: Partial<RFQParams>): RFQParams {
@@ -51,6 +52,21 @@ function makeAgreement(): Agreement {
     agreement_hash: 'abcd1234',
     buyer_signature: 'buyer-sig',
     seller_signature: 'seller-sig',
+  };
+}
+
+function makeMarginAssessment(overrides?: Partial<MarginAssessment>): MarginAssessment {
+  return {
+    agreement_id: 'agree-001',
+    buyer_id: 'did:key:z6MkTest',
+    seller_id: 'did:key:z6MkSeller',
+    buyer_pod: { agent_id: 'did:key:z6MkTest', score: 0.9, margin_rate: 0.1, confidence: 0.8, sample_size: 10, last_updated: new Date().toISOString() },
+    seller_pod: { agent_id: 'did:key:z6MkSeller', score: 0.85, margin_rate: 0.15, confidence: 0.7, sample_size: 8, last_updated: new Date().toISOString() },
+    required_margin_rate: 0.12,
+    required_deposit: 0.001,
+    full_deposit: 0.008,
+    savings: 0.007,
+    ...overrides,
   };
 }
 
@@ -137,9 +153,17 @@ describe('NegotiationSession', () => {
       expect(session.state).toBe('ACCEPTED');
     });
 
-    it('ACCEPTED → ESCROWED via escrowFunded', () => {
+    it('ACCEPTED → MARGIN_ASSESSED via marginAssessed', () => {
       session.addQuote(makeQuote());
       session.accept(makeAgreement());
+      session.marginAssessed(makeMarginAssessment());
+      expect(session.state).toBe('MARGIN_ASSESSED');
+    });
+
+    it('MARGIN_ASSESSED → ESCROWED via escrowFunded', () => {
+      session.addQuote(makeQuote());
+      session.accept(makeAgreement());
+      session.marginAssessed(makeMarginAssessment());
       session.escrowFunded('escrow-address-123');
       expect(session.state).toBe('ESCROWED');
     });
@@ -147,6 +171,7 @@ describe('NegotiationSession', () => {
     it('ESCROWED → ACTIVE via activate', () => {
       session.addQuote(makeQuote());
       session.accept(makeAgreement());
+      session.marginAssessed(makeMarginAssessment());
       session.escrowFunded('escrow-address-123');
       session.activate();
       expect(session.state).toBe('ACTIVE');
@@ -155,6 +180,7 @@ describe('NegotiationSession', () => {
     it('ACTIVE → COMPLETED via complete', () => {
       session.addQuote(makeQuote());
       session.accept(makeAgreement());
+      session.marginAssessed(makeMarginAssessment());
       session.escrowFunded('escrow-address-123');
       session.activate();
       session.complete();
@@ -164,6 +190,7 @@ describe('NegotiationSession', () => {
     it('ACTIVE → DISPUTED via dispute', () => {
       session.addQuote(makeQuote());
       session.accept(makeAgreement());
+      session.marginAssessed(makeMarginAssessment());
       session.escrowFunded('escrow-address-123');
       session.activate();
       session.dispute();
@@ -173,6 +200,7 @@ describe('NegotiationSession', () => {
     it('DISPUTED → RESOLVED via resolve', () => {
       session.addQuote(makeQuote());
       session.accept(makeAgreement());
+      session.marginAssessed(makeMarginAssessment());
       session.escrowFunded('escrow-address-123');
       session.activate();
       session.dispute();
@@ -198,9 +226,10 @@ describe('NegotiationSession', () => {
       expect(session.state).toBe('REJECTED');
     });
 
-    it('full happy path: RFQ → quote → accept → escrow → active → complete', () => {
+    it('full happy path: RFQ → quote → accept → margin → escrow → active → complete', () => {
       session.addQuote(makeQuote());
       session.accept(makeAgreement());
+      session.marginAssessed(makeMarginAssessment());
       session.escrowFunded('escrow-addr');
       session.activate();
       session.complete();
@@ -235,6 +264,12 @@ describe('NegotiationSession', () => {
       expect(() => session.escrowFunded('addr')).toThrow();
     });
 
+    it('cannot escrowFunded from ACCEPTED (must go through MARGIN_ASSESSED)', () => {
+      session.addQuote(makeQuote());
+      session.accept(makeAgreement());
+      expect(() => session.escrowFunded('addr')).toThrow();
+    });
+
     it('cannot activate from ACCEPTED', () => {
       session.addQuote(makeQuote());
       session.accept(makeAgreement());
@@ -244,6 +279,7 @@ describe('NegotiationSession', () => {
     it('cannot complete from ESCROWED', () => {
       session.addQuote(makeQuote());
       session.accept(makeAgreement());
+      session.marginAssessed(makeMarginAssessment());
       session.escrowFunded('addr');
       expect(() => session.complete()).toThrow();
     });
@@ -251,6 +287,7 @@ describe('NegotiationSession', () => {
     it('cannot dispute from COMPLETED', () => {
       session.addQuote(makeQuote());
       session.accept(makeAgreement());
+      session.marginAssessed(makeMarginAssessment());
       session.escrowFunded('addr');
       session.activate();
       session.complete();
@@ -260,6 +297,7 @@ describe('NegotiationSession', () => {
     it('cannot resolve from ACTIVE', () => {
       session.addQuote(makeQuote());
       session.accept(makeAgreement());
+      session.marginAssessed(makeMarginAssessment());
       session.escrowFunded('addr');
       session.activate();
       expect(() => session.resolve()).toThrow();
@@ -467,6 +505,7 @@ describe('NegotiationSession', () => {
     it('escrowFunded stores address accessible via toJSON', () => {
       session.addQuote(makeQuote());
       session.accept(makeAgreement());
+      session.marginAssessed(makeMarginAssessment());
       session.escrowFunded('0xDeadBeef1234');
       const json: Record<string, unknown> = session.toJSON();
       expect(json['escrowAddress']).toBe('0xDeadBeef1234');
@@ -475,6 +514,7 @@ describe('NegotiationSession', () => {
     it('toJSON on COMPLETED session includes full lifecycle data', () => {
       session.addQuote(makeQuote());
       session.accept(makeAgreement());
+      session.marginAssessed(makeMarginAssessment());
       session.escrowFunded('escrow-addr-final');
       session.activate();
       session.complete();
@@ -494,6 +534,7 @@ describe('NegotiationSession', () => {
     it('toJSON on RESOLVED session includes dispute lifecycle data', () => {
       session.addQuote(makeQuote());
       session.accept(makeAgreement());
+      session.marginAssessed(makeMarginAssessment());
       session.escrowFunded('escrow-addr-dispute');
       session.activate();
       session.dispute();
@@ -580,6 +621,7 @@ describe('NegotiationSession additional coverage', () => {
       const quote = { quote_id: 'q1', rfq_id: session.rfqId, seller: { agent_id: 'did:key:z6MkSeller', endpoint: 'http://localhost:3000' }, pricing: { price_per_unit: '0.01', currency: 'USDC', unit: 'request', pricing_model: 'fixed' as const }, expires_at: new Date(Date.now() + 60000).toISOString(), signature: 'sig' };
       session.addQuote(quote as any);
       session.accept({ agreement_id: 'a1', rfq_id: session.rfqId, accepting_message_id: 'quote-001', final_terms: { price_per_unit: '0.01', currency: 'USDC', unit: 'request' }, agreement_hash: 'h', buyer_signature: 'bs', seller_signature: 'ss' });
+      session.marginAssessed(makeMarginAssessment());
       session.escrowFunded('addr');
       expect(() => session.complete()).toThrow('ESCROWED');
     });
@@ -589,6 +631,7 @@ describe('NegotiationSession additional coverage', () => {
       const quote = { quote_id: 'q1', rfq_id: session.rfqId, seller: { agent_id: 'did:key:z6MkSeller', endpoint: 'http://localhost:3000' }, pricing: { price_per_unit: '0.01', currency: 'USDC', unit: 'request', pricing_model: 'fixed' as const }, expires_at: new Date(Date.now() + 60000).toISOString(), signature: 'sig' };
       session.addQuote(quote as any);
       session.accept({ agreement_id: 'a1', rfq_id: session.rfqId, accepting_message_id: 'quote-001', final_terms: { price_per_unit: '0.01', currency: 'USDC', unit: 'request' }, agreement_hash: 'h', buyer_signature: 'bs', seller_signature: 'ss' });
+      session.marginAssessed(makeMarginAssessment());
       session.escrowFunded('addr');
       session.activate();
       session.complete();
@@ -600,12 +643,13 @@ describe('NegotiationSession additional coverage', () => {
       const quote = { quote_id: 'q1', rfq_id: session.rfqId, seller: { agent_id: 'did:key:z6MkSeller', endpoint: 'http://localhost:3000' }, pricing: { price_per_unit: '0.01', currency: 'USDC', unit: 'request', pricing_model: 'fixed' as const }, expires_at: new Date(Date.now() + 60000).toISOString(), signature: 'sig' };
       session.addQuote(quote as any);
       session.accept({ agreement_id: 'a1', rfq_id: session.rfqId, accepting_message_id: 'quote-001', final_terms: { price_per_unit: '0.01', currency: 'USDC', unit: 'request' }, agreement_hash: 'h', buyer_signature: 'bs', seller_signature: 'ss' });
+      session.marginAssessed(makeMarginAssessment());
       session.escrowFunded('addr');
       session.activate();
       expect(() => session.resolve()).toThrow('ACTIVE');
     });
 
-    it('full lifecycle: RFQ_SENT -> QUOTES_RECEIVED -> ACCEPTED -> ESCROWED -> ACTIVE -> DISPUTED -> RESOLVED', () => {
+    it('full lifecycle: RFQ_SENT -> QUOTES_RECEIVED -> ACCEPTED -> MARGIN_ASSESSED -> ESCROWED -> ACTIVE -> DISPUTED -> RESOLVED', () => {
       const session = new NegotiationSession(makeRFQ());
       expect(session.state).toBe('RFQ_SENT');
 
@@ -615,6 +659,9 @@ describe('NegotiationSession additional coverage', () => {
 
       session.accept({ agreement_id: 'a1', rfq_id: session.rfqId, accepting_message_id: 'quote-001', final_terms: { price_per_unit: '0.01', currency: 'USDC', unit: 'request' }, agreement_hash: 'h', buyer_signature: 'bs', seller_signature: 'ss' });
       expect(session.state).toBe('ACCEPTED');
+
+      session.marginAssessed(makeMarginAssessment());
+      expect(session.state).toBe('MARGIN_ASSESSED');
 
       session.escrowFunded('escrow-address');
       expect(session.state).toBe('ESCROWED');
@@ -629,11 +676,12 @@ describe('NegotiationSession additional coverage', () => {
       expect(session.state).toBe('RESOLVED');
     });
 
-    it('full lifecycle: RFQ_SENT -> QUOTES_RECEIVED -> ACCEPTED -> ESCROWED -> ACTIVE -> COMPLETED', () => {
+    it('full lifecycle: RFQ_SENT -> QUOTES_RECEIVED -> ACCEPTED -> MARGIN_ASSESSED -> ESCROWED -> ACTIVE -> COMPLETED', () => {
       const session = new NegotiationSession(makeRFQ());
       const quote = { quote_id: 'q1', rfq_id: session.rfqId, seller: { agent_id: 'did:key:z6MkSeller', endpoint: 'http://localhost:3000' }, pricing: { price_per_unit: '0.01', currency: 'USDC', unit: 'request', pricing_model: 'fixed' as const }, expires_at: new Date(Date.now() + 60000).toISOString(), signature: 'sig' };
       session.addQuote(quote as any);
       session.accept({ agreement_id: 'a1', rfq_id: session.rfqId, accepting_message_id: 'quote-001', final_terms: { price_per_unit: '0.01', currency: 'USDC', unit: 'request' }, agreement_hash: 'h', buyer_signature: 'bs', seller_signature: 'ss' });
+      session.marginAssessed(makeMarginAssessment());
       session.escrowFunded('escrow-address');
       session.activate();
       session.complete();
@@ -681,6 +729,7 @@ describe('NegotiationSession additional coverage', () => {
       const quote = { quote_id: 'q1', rfq_id: session.rfqId, seller: { agent_id: 'did:key:z6MkSeller', endpoint: 'http://localhost:3000' }, pricing: { price_per_unit: '0.01', currency: 'USDC', unit: 'request', pricing_model: 'fixed' as const }, expires_at: new Date(Date.now() + 60000).toISOString(), signature: 'sig' };
       session.addQuote(quote as any);
       session.accept({ agreement_id: 'a1', rfq_id: session.rfqId, accepting_message_id: 'quote-001', final_terms: { price_per_unit: '0.01', currency: 'USDC', unit: 'request' }, agreement_hash: 'h', buyer_signature: 'bs', seller_signature: 'ss' });
+      session.marginAssessed(makeMarginAssessment());
       session.escrowFunded('3xj4Y7qnPETiQwNmfUZgk5GsrFMz1Yk8LgMpRbJ7EfP');
       expect(session.getEscrowAddress()).toBe('3xj4Y7qnPETiQwNmfUZgk5GsrFMz1Yk8LgMpRbJ7EfP');
     });
@@ -704,6 +753,7 @@ describe('NegotiationSession additional coverage', () => {
       const session = new NegotiationSession(makeRFQ());
       session.addQuote(makeQuote());
       session.accept(makeAgreement());
+      session.marginAssessed(makeMarginAssessment());
       session.escrowFunded('addr');
       session.activate();
       session.complete();
@@ -714,6 +764,7 @@ describe('NegotiationSession additional coverage', () => {
       const session = new NegotiationSession(makeRFQ());
       session.addQuote(makeQuote());
       session.accept(makeAgreement());
+      session.marginAssessed(makeMarginAssessment());
       session.escrowFunded('addr');
       session.activate();
       session.dispute();
@@ -741,6 +792,7 @@ describe('NegotiationSession additional coverage', () => {
       const session = new NegotiationSession(makeRFQ());
       session.addQuote(makeQuote());
       session.accept(makeAgreement());
+      session.marginAssessed(makeMarginAssessment());
       session.escrowFunded('addr');
       session.activate();
       const next = session.getValidNextStates();

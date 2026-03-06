@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { OphirError, OphirErrorCode, ERROR_DESCRIPTIONS } from '../errors.js';
 
 describe('OphirErrorCode', () => {
-  it('defines all 21 error codes', () => {
+  it('defines all 27 error codes', () => {
     const codes = Object.values(OphirErrorCode);
-    expect(codes.length).toBe(21);
+    expect(codes.length).toBe(27);
   });
 
   it('message validation codes start with OPHIR_00', () => {
@@ -41,6 +41,15 @@ describe('OphirErrorCode', () => {
     expect(OphirErrorCode.SELLER_UNREACHABLE).toBe('OPHIR_400');
     expect(OphirErrorCode.SOLANA_RPC_ERROR).toBe('OPHIR_401');
     expect(OphirErrorCode.LOCKSTEP_UNREACHABLE).toBe('OPHIR_402');
+    expect(OphirErrorCode.INSECURE_TRANSPORT).toBe('OPHIR_403');
+  });
+
+  it('clearinghouse codes start with OPHIR_5', () => {
+    expect(OphirErrorCode.MARGIN_ASSESSMENT_FAILED).toBe('OPHIR_500');
+    expect(OphirErrorCode.EXPOSURE_LIMIT_EXCEEDED).toBe('OPHIR_501');
+    expect(OphirErrorCode.NETTING_CYCLE_FAILED).toBe('OPHIR_502');
+    expect(OphirErrorCode.CIRCUIT_BREAKER_TRIGGERED).toBe('OPHIR_503');
+    expect(OphirErrorCode.POD_SCORE_INSUFFICIENT).toBe('OPHIR_504');
   });
 
   it('all codes are unique', () => {

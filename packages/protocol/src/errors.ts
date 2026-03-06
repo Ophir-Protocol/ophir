@@ -55,6 +55,19 @@ export enum OphirErrorCode {
   SOLANA_RPC_ERROR = 'OPHIR_401',
   /** Thrown when the Lockstep verification service cannot be reached. */
   LOCKSTEP_UNREACHABLE = 'OPHIR_402',
+  /** Thrown when a non-TLS endpoint is used in production (potential MITM). */
+  INSECURE_TRANSPORT = 'OPHIR_403',
+
+  /** Thrown when the clearinghouse margin assessment fails. */
+  MARGIN_ASSESSMENT_FAILED = 'OPHIR_500',
+  /** Thrown when an agent's exposure exceeds the clearinghouse limit. */
+  EXPOSURE_LIMIT_EXCEEDED = 'OPHIR_501',
+  /** Thrown when the multilateral netting cycle fails to execute. */
+  NETTING_CYCLE_FAILED = 'OPHIR_502',
+  /** Thrown when the circuit breaker triggers due to excessive agent exposure. */
+  CIRCUIT_BREAKER_TRIGGERED = 'OPHIR_503',
+  /** Thrown when the agent's Probability of Delivery score is too low. */
+  POD_SCORE_INSUFFICIENT = 'OPHIR_504',
 }
 
 /** Human-readable descriptions for each Ophir error code. */
@@ -80,6 +93,12 @@ export const ERROR_DESCRIPTIONS: Record<OphirErrorCode, string> = {
   [OphirErrorCode.SELLER_UNREACHABLE]: 'Seller endpoint unreachable',
   [OphirErrorCode.SOLANA_RPC_ERROR]: 'Solana RPC error',
   [OphirErrorCode.LOCKSTEP_UNREACHABLE]: 'Lockstep service unreachable',
+  [OphirErrorCode.INSECURE_TRANSPORT]: 'Insecure transport: TLS required',
+  [OphirErrorCode.MARGIN_ASSESSMENT_FAILED]: 'Margin assessment failed',
+  [OphirErrorCode.EXPOSURE_LIMIT_EXCEEDED]: 'Agent exposure limit exceeded',
+  [OphirErrorCode.NETTING_CYCLE_FAILED]: 'Netting cycle execution failed',
+  [OphirErrorCode.CIRCUIT_BREAKER_TRIGGERED]: 'Circuit breaker triggered — agent exposure too high',
+  [OphirErrorCode.POD_SCORE_INSUFFICIENT]: 'PoD score insufficient for this operation',
 };
 
 /**

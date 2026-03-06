@@ -2,9 +2,21 @@
 
 from __future__ import annotations
 
+import warnings
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
 import httpx
+
+
+def _check_tls(url: str, label: str = "URL") -> None:
+    parsed = urlparse(url)
+    if parsed.scheme == "http" and parsed.hostname not in ("localhost", "127.0.0.1", "::1"):
+        warnings.warn(
+            f"{label} uses http:// on a non-localhost host. "
+            "Use https:// to protect data in transit.",
+            stacklevel=3,
+        )
 
 
 class Agent:
@@ -31,10 +43,13 @@ class Agent:
         endpoint: str,
         name: Optional[str] = None,
         description: Optional[str] = None,
+        verify_tls: bool = True,
     ) -> None:
+        _check_tls(endpoint, "agent endpoint")
         self.endpoint = endpoint.rstrip("/")
         self.name = name or self.endpoint
         self.description = description or ""
+        self._verify_tls = verify_tls
 
     def _build_card(
         self,
@@ -110,6 +125,7 @@ class Agent:
         dict
             The registration response from the registry.
         """
+        _check_tls(registry_url, "registry_url")
         card = self._build_card(
             services=services,
             protocols=protocols,
@@ -147,6 +163,7 @@ class Agent:
         timeout: float = 30.0,
     ) -> dict:
         """Async version of :meth:`register`."""
+        _check_tls(registry_url, "registry_url")
         card = self._build_card(
             services=services,
             protocols=protocols,

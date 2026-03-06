@@ -1,9 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { PublicKey, Keypair } from '@solana/web3.js';
 import { EscrowManager } from '../src/escrow.js';
-import { OphirError } from '@ophirai/protocol';
-
-const DEFAULT_PROGRAM_ID = 'CHwqh23SpWSM6WLsd15iQcP4KSkB351S9eGcN4fQSVqy';
+import { OphirError, ESCROW_PROGRAM_ID } from '@ophirai/protocol';
 
 function randomBytes(n: number): Uint8Array {
   const buf = new Uint8Array(n);
@@ -82,7 +80,7 @@ describe('EscrowManager', () => {
 
   it('PDA derivation uses correct seeds (matches manual findProgramAddressSync)', () => {
     const mgr = new EscrowManager();
-    const programId = new PublicKey(DEFAULT_PROGRAM_ID);
+    const programId = new PublicKey(ESCROW_PROGRAM_ID);
     const buyer = Keypair.generate().publicKey.toBytes();
     const hash = randomBytes(32);
 
@@ -128,7 +126,7 @@ describe('EscrowManager', () => {
 
   it('vault PDA uses correct seeds (matches manual findProgramAddressSync)', () => {
     const mgr = new EscrowManager();
-    const programId = new PublicKey(DEFAULT_PROGRAM_ID);
+    const programId = new PublicKey(ESCROW_PROGRAM_ID);
     const escrowKey = Keypair.generate().publicKey.toBytes();
 
     const { address, bump } = mgr.deriveVaultAddress(escrowKey);
