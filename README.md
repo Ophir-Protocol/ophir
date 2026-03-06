@@ -1,20 +1,12 @@
-# Ophir: Agent Negotiation Protocol
+# Ophir
 
-An open protocol for AI agents to autonomously discover, negotiate, and transact with each other.
+Open protocol for AI agents to discover, negotiate, and transact with each other.
 
-AI agents spend billions on API calls but have zero commercial infrastructure. Ophir gives agents the ability to negotiate pricing and SLAs in real time, enforce agreements with cryptographic signatures, and settle payments through on-chain escrow.
-
-Built on JSON-RPC 2.0, Ed25519 cryptography, and Solana escrow. Ships as TypeScript libraries you can drop into any agent framework.
-
----
+AI agents spend billions on API calls with no way to negotiate pricing or enforce service quality. Ophir gives agents a structured negotiation lifecycle: discover providers, request quotes, counter-offer, sign agreements with Ed25519, monitor SLA compliance, and settle through Solana escrow.
 
 ## Quick Start
 
-There are three ways to use Ophir:
-
-### 1. MCP Server -- one line in your agent config
-
-Add to your MCP client configuration:
+Add to any MCP client:
 
 ```json
 {
@@ -27,30 +19,7 @@ Add to your MCP client configuration:
 }
 ```
 
-Your LLM agent now has tools to discover sellers, request quotes, negotiate terms, and accept agreements.
-
-### 2. Inference Router -- drop-in OpenAI replacement
-
-```bash
-npx @ophirai/router --port 4000
-```
-
-```typescript
-import OpenAI from 'openai';
-
-const client = new OpenAI({
-  baseURL: 'http://localhost:4000/v1',
-  apiKey: 'unused',
-});
-
-// Ophir negotiates the best price and SLA behind the scenes
-const response = await client.chat.completions.create({
-  model: 'llama-70b',
-  messages: [{ role: 'user', content: 'Hello' }],
-});
-```
-
-### 3. SDK -- programmatic negotiation
+Or use the SDK directly:
 
 ```bash
 npm install @ophirai/sdk @ophirai/protocol
@@ -75,165 +44,68 @@ const session = await buyer.requestQuotes({
 const quotes = await buyer.waitForQuotes(session, { minQuotes: 1, timeout: 30_000 });
 const best = buyer.rankQuotes(quotes, 'cheapest')[0];
 const agreement = await buyer.acceptQuote(best);
-console.log('Agreement:', agreement.agreement_id);
-await buyer.close();
 ```
 
----
+OpenAI-compatible inference gateway:
+
+```bash
+npx @ophirai/router --port 4000
+```
 
 ## Packages
 
-| Package | Description | Version |
-| ------- | ----------- | ------- |
-| [`@ophirai/protocol`](packages/protocol) | Core types, Zod schemas, 12-state FSM, SLA metrics, error codes | 0.3.0 |
-| [`@ophirai/sdk`](packages/sdk) | BuyerAgent, SellerAgent, Ed25519 signing, did:key identity, escrow, clearinghouse | 0.3.0 |
-| [`@ophirai/clearinghouse`](packages/clearinghouse) | Multilateral netting, fractional margin, PoD scoring | 0.1.0 |
-| [`@ophirai/registry`](packages/registry) | Agent discovery with rate limiting, auth, reputation hardening | 0.3.0 |
-| [`@ophirai/mcp-server`](packages/mcp-server) | MCP tools for LLM-powered agents | 0.2.0 |
-| [`@ophirai/providers`](packages/providers) | AI inference provider wrappers (6 providers) | 0.2.0 |
-| [`@ophirai/router`](packages/router) | OpenAI-compatible inference gateway with auto-negotiation | 0.2.0 |
-| [`@ophirai/openai-adapter`](packages/openai-adapter) | OpenAI function calling adapter | 0.2.0 |
-| [`@ophirai/demo`](packages/demo) | Self-negotiating agent demo | 0.2.0 |
-| [`escrow`](packages/escrow) | Solana Anchor program for USDC escrow with arbiter disputes | -- |
-| [`@ophirai/reference-agents`](packages/reference-agents) | Example buyer/seller agents | 0.1.0 |
-| [`@ophirai/docs`](packages/docs) | Protocol documentation | 0.1.0 |
-
----
-
-## Architecture
-
-```
-                        ┌─────────────────────────────┐
-                        │       Applications          │
-                        │  MCP Server  /  Router  /   │
-                        │  Reference Agents  /  Demo  │
-                        └──────────┬──────────────────┘
-                                   │
-              ┌────────────────────┼────────────────────┐
-              │                    │                     │
-              ▼                    ▼                     ▼
-   ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐
-   │  OpenAI Adapter  │ │    Providers     │ │    Registry      │
-   │  Function calling │ │  6 AI backends   │ │  Agent discovery │
-   └────────┬─────────┘ └────────┬─────────┘ └────────┬─────────┘
-            │                    │                     │
-            └────────────────────┼─────────────────────┘
-                                 │
-                                 ▼
-                    ┌────────────────────────┐
-                    │    SDK (@ophirai/sdk)   │
-                    │  BuyerAgent / Seller    │
-                    │  Signing / Identity     │
-                    │  Transport / Sessions   │
-                    └──────┬────────┬────────┘
-                           │        │
-              ┌────────────┘        └────────────┐
-              ▼                                   ▼
-   ┌────────────────────────┐        ┌────────────────────────┐
-   │ Clearinghouse          │        │ Protocol (@ophirai/     │
-   │ (@ophirai/             │        │          protocol)      │
-   │  clearinghouse)        │        │  Types / Schemas /      │
-   │  PoD Oracle / Netting  │        │  State Machine / SLA    │
-   │  Margin Assessment     │        └───────────┬────────────┘
-   └───────────┬────────────┘                    │
-               │                                 │
-               └─────────────┬───────────────────┘
-                             ▼
-                    ┌────────────────────────┐
-                    │   Solana Escrow         │
-                    │   (Anchor Program)      │
-                    │  USDC vaults / PDA /    │
-                    │  Dispute / Release      │
-                    └────────────────────────┘
-```
-
----
+| Package | Description |
+| --- | --- |
+| [`@ophirai/protocol`](packages/protocol) | Core types, Zod schemas, 12-state FSM, SLA metrics, error codes |
+| [`@ophirai/sdk`](packages/sdk) | BuyerAgent, SellerAgent, Ed25519 signing, did:key identity, escrow |
+| [`@ophirai/clearinghouse`](packages/clearinghouse) | Multilateral netting, fractional margin, PoD scoring |
+| [`@ophirai/registry`](packages/registry) | Agent discovery with rate limiting, auth, reputation |
+| [`@ophirai/mcp-server`](packages/mcp-server) | MCP tools for LLM-powered agents |
+| [`@ophirai/router`](packages/router) | OpenAI-compatible inference gateway |
+| [`@ophirai/providers`](packages/providers) | AI inference provider wrappers |
+| [`@ophirai/openai-adapter`](packages/openai-adapter) | OpenAI function calling adapter |
+| [`escrow`](packages/escrow) | Solana Anchor program for USDC escrow |
 
 ## How It Works
 
-1. **Discover** -- Buyers query the Registry to find sellers offering the services they need. Sellers register with capabilities, pricing, and SLA commitments.
-
-2. **Negotiate** -- The buyer sends a signed RFQ (Request for Quote) specifying service requirements, budget, and SLA targets. Sellers respond with signed quotes. Either party can counter-offer up to 5 rounds.
-
-3. **Agree** -- Both parties sign the final terms with Ed25519. The agreement hash (SHA-256 of canonical terms) binds the deal.
-
-4. **Margin** -- The Clearinghouse assesses each party's Probability of Delivery (PoD) from historical SLA performance. Proven agents post as little as 5% margin instead of 100%. Circular debts are netted via the multilateral netting engine.
-
-5. **Escrow** -- The buyer locks USDC in a Solana PDA escrow vault (fractional deposit based on margin assessment).
-
-6. **Monitor** -- The SDK tracks 8 SLA metrics (latency, uptime, accuracy, throughput, error rate, TTFB, custom) against committed targets during the service window.
-
-7. **Dispute** -- If SLA violations are detected, the buyer files an on-chain dispute with arbiter co-sign. The escrow splits funds according to the penalty rate, automatically compensating the buyer.
-
----
+1. **Discover** &mdash; Buyers query the Registry. Sellers register with capabilities, pricing, and SLA commitments.
+2. **Negotiate** &mdash; Buyer sends a signed RFQ. Sellers respond with quotes. Up to 5 counter-offer rounds.
+3. **Agree** &mdash; Both parties sign with Ed25519. SHA-256 hash of canonical terms binds the deal.
+4. **Margin** &mdash; Clearinghouse scores Probability of Delivery from historical SLA data. Proven agents post as little as 5% margin.
+5. **Escrow** &mdash; Buyer locks USDC in a Solana PDA vault. Fractional deposit based on margin assessment.
+6. **Monitor** &mdash; SDK tracks 8 SLA metrics (latency, uptime, accuracy, throughput, error rate, TTFB) against targets.
+7. **Dispute** &mdash; SLA violations trigger on-chain dispute with arbiter co-sign. Escrow splits funds automatically.
 
 ## Protocol
 
-- **Transport**: JSON-RPC 2.0 over HTTP
-- **Identity**: `did:key` (Ed25519 public key with `0xed01` multicodec prefix)
-- **Signing**: Ed25519 via tweetnacl, JCS canonicalization (RFC 8785)
-- **State Machine**: 12 states (IDLE, RFQ_SENT, QUOTES_RECEIVED, COUNTERING, ACCEPTED, MARGIN_ASSESSED, ESCROWED, ACTIVE, COMPLETED, REJECTED, DISPUTED, RESOLVED)
-- **Settlement**: Solana Anchor program with PDA-derived USDC escrow vaults
-- **Message Types**: RFQ, Quote, Counter, Accept, Reject, Dispute
-
-All messages are signed and verified. Agreements are dual-signed with SHA-256 hash commitment. Replay protection via time-windowed message ID deduplication.
-
----
+| | |
+| --- | --- |
+| Transport | JSON-RPC 2.0 over HTTP |
+| Identity | `did:key` (Ed25519, `0xed01` multicodec) |
+| Signing | Ed25519 via tweetnacl, JCS canonicalization (RFC 8785) |
+| State Machine | 12 states: IDLE through RESOLVED |
+| Settlement | Solana Anchor, PDA-derived USDC vaults |
+| Messages | RFQ, Quote, Counter, Accept, Reject, Dispute |
 
 ## Specifications
 
-| Spec | Description |
-| ---- | ----------- |
+| Spec | |
+| --- | --- |
 | [Protocol Specification](packages/docs/protocol/specification.md) | Full protocol reference |
 | [State Machine](packages/docs/protocol/state-machine.md) | Negotiation state transitions |
-| [Registry Protocol](specs/REGISTRY.md) | Agent registry and discovery |
-| [Inference Router](specs/INFERENCE-ROUTER.md) | OpenAI-compatible gateway |
-| [Provider Protocol](specs/PROVIDER-PROTOCOL.md) | Provider wrapper interface |
-| [Agent Discovery](specs/AGENT-DISCOVERY.md) | Agent discovery mechanisms |
-| [Ophir-Ready Badge](specs/OPHIR-READY.md) | Compliance badge specification |
 | [Security Model](packages/docs/concepts/security.md) | Cryptographic security layers |
 | [SLA Schema](packages/docs/concepts/sla-schema.md) | SLA metric definitions |
 | [Escrow Lifecycle](packages/docs/concepts/escrow.md) | Solana escrow operations |
 
----
-
-## Self-Negotiating Agent Demo
-
-The demo showcases the full negotiation lifecycle: a buyer and seller agent negotiate, counter-offer, and reach agreement -- all within a single process.
-
-```bash
-# From the repo root
-npm install
-npx turbo build --filter=@ophirai/demo
-
-# Run the demo
-cd packages/demo
-npx tsx src/self-negotiating.ts
-```
-
----
-
 ## Development
 
 ```bash
-npm install                                              # Install all workspace dependencies
-npx turbo build                                          # Build all packages
-npx turbo test                                           # Run all tests
-npx turbo build --filter='!escrow' --filter='!@ophirai/demo'  # Build TypeScript packages only
+npm install
+npx turbo build
+npx turbo test
 ```
 
-Build order is managed by Turbo: `protocol` builds first, then `sdk`, then everything else.
-
----
-
-## Contributing
-
-1. Fork the repo and create a feature branch
-2. Make your changes with tests
-3. Ensure `npx turbo build` and `npx turbo test` pass
-4. Submit a pull request
-
----
+Build order: `protocol` first, then `sdk`, then everything else.
 
 ## License
 
