@@ -12,7 +12,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ophirai/ophir",
+    "url": "https://github.com/Ophir-Protocol/ophir",
     "directory": "packages/mcp-server"
   },
   "keywords": ["mcp", "model-context-protocol", "ai-agents", "negotiation", "ophir", "llm-tools"],

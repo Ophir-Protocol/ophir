@@ -185,7 +185,7 @@ response = client.<span class="fn">chat</span>.completions.<span class="fn">crea
   }'</span></code></pre>
 
     <div class="links">
-      <a href="https://github.com/ophirai/ophir">GitHub</a>
+      <a href="https://github.com/Ophir-Protocol/ophir">GitHub</a>
       <a href="https://docs.ophir.ai">Documentation</a>
       <a href="/.well-known/ophir.json">Discovery</a>
       <a href="/.well-known/agent.json">Agent Card</a>
@@ -228,7 +228,7 @@ export function createGateway(config?: GatewayConfig) {
 
     res.json({
       status: 'ok',
-      version: '0.1.0',
+      version: '0.2.0',
       timestamp: new Date().toISOString(),
       uptime_seconds: Math.floor((Date.now() - startedAt) / 1000),
       providers: {
@@ -266,7 +266,7 @@ export function createGateway(config?: GatewayConfig) {
     res.json({
       name: 'Ophir Inference Gateway',
       description: 'OpenAI-compatible inference gateway with automatic provider negotiation via the Ophir protocol',
-      version: '0.1.0',
+      version: '0.2.0',
       protocol: 'a2a/1.0',
       capabilities: ['inference', 'negotiation', 'sla-monitoring'],
       endpoints: {

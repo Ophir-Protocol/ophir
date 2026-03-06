@@ -23,7 +23,7 @@ description: |
 version: "0.2.0"
 author: "Ophir Protocol"
 license: "MIT"
-repository: "https://github.com/ophirai/ophir"
+repository: "https://github.com/Ophir-Protocol/ophir"
 homepage: "https://ophir.ai"
 categories:
   - "ai"

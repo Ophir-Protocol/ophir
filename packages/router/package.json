@@ -7,7 +7,7 @@
   "types": "dist/index.d.ts",
   "bin": { "ophir-router": "dist/bin.js" },
   "license": "MIT",
-  "repository": { "type": "git", "url": "https://github.com/ophirai/ophir", "directory": "packages/router" },
+  "repository": { "type": "git", "url": "https://github.com/Ophir-Protocol/ophir", "directory": "packages/router" },
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
